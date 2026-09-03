@@ -105,9 +105,16 @@ export default function Home() {
   const [messaggio, setMessaggio] = useState("");
   const [filtroRuolo, setFiltroRuolo] = useState<string>("tutti");
   const [legaScandicci, setLegaScandicci] = useState<boolean>(false);
+  
+  // NUOVI STATI PER LE FUNZIONALITÀ AVANZATE
+  const [preferiti, setPreferiti] = useState<string[]>([]);
+  const [miaSquadra, setMiaSquadra] = useState<string>("");
+  const [soloPreferiti, setSoloPreferiti] = useState<boolean>(false);
+  const [messaggioExport, setMessaggioExport] = useState<string>("");
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
+  // Caricamento dati da localStorage all'avvio
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cfg = localStorage.getItem("fantai-legaconfig");
@@ -124,6 +131,10 @@ export default function Home() {
       }
       const ac = localStorage.getItem("fantai-acquisti");
       if (ac) setAcquisti(JSON.parse(ac));
+      const pref = localStorage.getItem("fantai-preferiti");
+      if (pref) setPreferiti(JSON.parse(pref));
+      const mia = localStorage.getItem("fantai-mia-squadra");
+      if (mia) setMiaSquadra(mia);
     }
   }, []);
 
@@ -150,16 +161,106 @@ export default function Home() {
     setView("dashboard");
   };
 
+  // ========== FUNZIONI PREFERITI ==========
+  const togglePreferito = (nome: string) => {
+    setPreferiti((prev) => {
+      const nuovi = prev.includes(nome) ? prev.filter((n) => n !== nome) : [...prev, nome];
+      localStorage.setItem("fantai-preferiti", JSON.stringify(nuovi));
+      return nuovi;
+    });
+  };
+
+  const cambiaMiaSquadra = (nome: string) => {
+    setMiaSquadra(nome);
+    localStorage.setItem("fantai-mia-squadra", nome);
+  };
+
+  // ========== FUNZIONE ESPORTAZIONE ROSA ==========
+  const esportaRosa = (formato: "testo" | "csv") => {
+    if (!miaSquadra) {
+      setMessaggioExport("⚠️ Seleziona prima la tua squadra nel pannello 'La Mia Squadra'.");
+      setTimeout(() => setMessaggioExport(""), 3000);
+      return;
+    }
+    const mia = squadre.find((s) => s.nome === miaSquadra);
+    if (!mia || mia.giocatori.length === 0) {
+      setMessaggioExport("⚠️ La tua rosa è ancora vuota.");
+      setTimeout(() => setMessaggioExport(""), 3000);
+      return;
+    }
+
+    if (formato === "testo") {
+      const perRuolo: Record<string, string[]> = { P: [], D: [], C: [], A: [] };
+      mia.giocatori.forEach((g) => {
+        const r = g.ruolo || "VAR";
+        if (perRuolo[r]) perRuolo[r].push(`${g.nome} (${g.squadra || "?"}) - ${g.prezzoPagato}cr`);
+      });
+      const testo = `🏆 ${miaSquadra}\n💰 Budget residuo: ${mia.budget}cr\n\n` +
+        `🧤 PORTIERI:\n${perRuolo.P.join("\n") || "-"}\n\n` +
+        `🛡️ DIFENSORI:\n${perRuolo.D.join("\n") || "-"}\n\n` +
+        `⚽ CENTROCAMPISTI:\n${perRuolo.C.join("\n") || "-"}\n\n` +
+        `🔥 ATTACCANTI:\n${perRuolo.A.join("\n") || "-"}`;
+      
+      navigator.clipboard.writeText(testo).then(() => {
+        setMessaggioExport("✅ Rosa copiata negli appunti!");
+        setTimeout(() => setMessaggioExport(""), 2500);
+      });
+    } else {
+      const righe = ["Ruolo,Nome,Squadra,Prezzo"];
+      mia.giocatori.forEach((g) => {
+        righe.push(`${g.ruolo || ""},${g.nome},${g.squadra || ""},${g.prezzoPagato || 0}`);
+      });
+      const csv = righe.join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `rosa_${miaSquadra.replace(/\s+/g, "_")}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessaggioExport("✅ CSV scaricato!");
+      setTimeout(() => setMessaggioExport(""), 2500);
+    }
+  };
+
+  // ========== CALCOLI DERIVATI ==========
   const giocatoriDisponibili = useMemo(() => {
     return giocatori.filter((g) => !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome)));
   }, [giocatori, squadre]);
 
   const giocatoriFiltrati = useMemo(() => {
     let lista = giocatoriDisponibili;
+    if (soloPreferiti) lista = lista.filter((g) => preferiti.includes(g.nome));
     if (filtroRuolo !== "tutti") lista = lista.filter((g) => g.ruolo === filtroRuolo);
     if (ricerca.trim()) lista = lista.filter((g) => g.nome.toLowerCase().includes(ricerca.toLowerCase()));
     return [...lista].sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
-  }, [giocatoriDisponibili, filtroRuolo, ricerca]);
+  }, [giocatoriDisponibili, filtroRuolo, ricerca, soloPreferiti, preferiti]);
+
+  // Storico prezzi per ruolo (ultimi 5 acquisti)
+  const storicoPerRuolo = useMemo(() => {
+    const storico: Record<string, { nome: string; prezzo: number; squadra: string }[]> = { P: [], D: [], C: [], A: [] };
+    acquisti.slice().reverse().forEach((a) => {
+      const giocatore = giocatori.find((g) => g.nome === a.giocatore);
+      const ruolo = giocatore?.ruolo;
+      if (ruolo && storico[ruolo] && storico[ruolo].length < 5) {
+        storico[ruolo].push({ nome: a.giocatore, prezzo: a.prezzo, squadra: a.squadra });
+      }
+    });
+    return storico;
+  }, [acquisti, giocatori]);
+
+  // La mia squadra (dati)
+  const datiMiaSquadra = useMemo(() => {
+    if (!miaSquadra) return null;
+    const sq = squadre.find((s) => s.nome === miaSquadra);
+    if (!sq) return null;
+    const perRuolo: Record<string, Player[]> = { P: [], D: [], C: [], A: [] };
+    sq.giocatori.forEach((g) => {
+      const r = g.ruolo || "VAR";
+      if (perRuolo[r]) perRuolo[r].push(g);
+    });
+    return { squadra: sq, perRuolo };
+  }, [miaSquadra, squadre]);
 
   useEffect(() => {
     const ruoli = ["P", "D", "C", "A"];
@@ -276,10 +377,12 @@ export default function Home() {
 
   const cambiaNomeSquadra = (indice: number, nuovoNome: string) => {
     const nuoveSquadre = [...squadre];
+    const vecchioNome = nuoveSquadre[indice].nome;
     nuoveSquadre[indice] = { ...nuoveSquadre[indice], nome: nuovoNome };
     setSquadre(nuoveSquadre);
     localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
-    if (squadraAcquirente === squadre[indice]?.nome) setSquadraAcquirente(nuovoNome);
+    if (squadraAcquirente === vecchioNome) setSquadraAcquirente(nuovoNome);
+    if (miaSquadra === vecchioNome) cambiaMiaSquadra(nuovoNome);
   };
 
   const generaAnalisiRuolo = (ruolo: string, squadreList: Squadra[], giocatoriList: Player[]): string => {
@@ -300,21 +403,151 @@ export default function Home() {
     return analisi;
   };
 
-  // ==========================================
-  // 1. RENDER: VISTA ASTA (CORRETTAMENTE RIPRISTINATA)
-  // ==========================================
+  // ========== COMPONENTE: PANNELLO "LA MIA SQUADRA" ==========
+  const PannelloMiaSquadra = () => {
+    if (!miaSquadra || !datiMiaSquadra) {
+      return (
+        <div className="rounded-2xl border border-yellow-700 bg-yellow-950/30 p-4 mb-4">
+          <p className="text-sm text-yellow-300 mb-2">⚙️ Seleziona la tua squadra per attivare il pannello:</p>
+          <select
+            value={miaSquadra}
+            onChange={(e) => cambiaMiaSquadra(e.target.value)}
+            className="w-full rounded-lg border border-yellow-700 bg-gray-800 p-2 text-white text-sm"
+          >
+            <option value="">-- Scegli --</option>
+            {squadre.map((s) => (
+              <option key={s.nome} value={s.nome}>{s.nome}</option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    const { squadra, perRuolo } = datiMiaSquadra;
+    const ruoliOrd: ("P" | "D" | "C" | "A")[] = ["P", "D", "C", "A"];
+    const icone: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
+
+    return (
+      <div className="rounded-2xl border-2 border-green-600 bg-gradient-to-br from-green-950/40 to-gray-900 p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs text-green-400 font-semibold tracking-wider">LA MIA SQUADRA</p>
+            <h3 className="text-lg font-bold text-white">{miaSquadra}</h3>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Budget</p>
+            <p className="text-2xl font-bold text-green-400">{squadra.budget}<span className="text-sm">cr</span></p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {ruoliOrd.map((r) => {
+            const max = config.rosa[r];
+            const attuale = perRuolo[r].length;
+            const disponibili = giocatoriDisponibili.filter((g) => g.ruolo === r).length;
+            const allarme = attuali < max && disponibili <= 3;
+            return (
+              <div key={r} className={`rounded-lg p-2 text-center ${allarme ? "bg-red-950 border border-red-700" : "bg-gray-800/60"}`}>
+                <div className="text-lg">{icone[r]}</div>
+                <div className={`text-xs font-bold ${allarme ? "text-red-400" : "text-white"}`}>
+                  {attuale}/{max}
+                </div>
+                {allarme && <div className="text-[10px] text-red-400 mt-1">⚠️ {disponibili} rimasti</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="max-h-32 overflow-y-auto space-y-1">
+          {ruoliOrd.map((r) =>
+            perRuolo[r].map((g, i) => (
+              <div key={`${r}-${i}`} className="flex justify-between text-xs bg-gray-800/40 rounded px-2 py-1">
+                <span className="text-gray-300">{icone[r]} {g.nome}</span>
+                <span className="text-green-400 font-semibold">{g.prezzoPagato}cr</span>
+              </div>
+            ))
+          )}
+          {squadra.giocatori.length === 0 && (
+            <p className="text-xs text-gray-500 text-center py-2">Nessun giocatore acquistato</p>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => esportaRosa("testo")} className="flex-1 rounded-lg bg-blue-700 hover:bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors">
+            📋 Copia Rosa
+          </button>
+          <button onClick={() => esportaRosa("csv")} className="flex-1 rounded-lg bg-purple-700 hover:bg-purple-600 px-3 py-2 text-xs font-semibold text-white transition-colors">
+            📥 Scarica CSV
+          </button>
+        </div>
+
+        {messaggioExport && (
+          <p className="mt-2 text-xs text-center text-green-400 font-semibold">{messaggioExport}</p>
+        )}
+      </div>
+    );
+  };
+
+  // ========== COMPONENTE: STORICO PREZZI ==========
+  const StoricoPrezzi = () => {
+    const ruoliOrd: ("P" | "D" | "C" | "A")[] = ["P", "D", "C", "A"];
+    const icone: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
+    const nomiRuolo: Record<string, string> = { P: "Portieri", D: "Difensori", C: "Centrocampisti", A: "Attaccanti" };
+
+    return (
+      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          📈 Storico Prezzi (ultimi 5 per ruolo)
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          {ruoliOrd.map((r) => {
+            const lista = storicoPerRuolo[r];
+            const media = lista.length > 0 ? Math.round(lista.reduce((s, x) => s + x.prezzo, 0) / lista.length) : 0;
+            return (
+              <div key={r} className="rounded-lg bg-gray-800/50 p-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-white">{icone[r]} {nomiRuolo[r]}</span>
+                  {media > 0 && <span className="text-xs text-yellow-400 font-bold">μ {media}</span>}
+                </div>
+                {lista.length === 0 ? (
+                  <p className="text-[10px] text-gray-500">Nessun acquisto</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {lista.map((x, i) => (
+                      <div key={i} className="flex justify-between text-[10px]">
+                        <span className="text-gray-400 truncate max-w-[70%]">{x.nome}</span>
+                        <span className="text-green-400 font-semibold">{x.prezzo}cr</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ========== RENDER: VISTA ASTA ==========
   if (view === "asta") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
-          <button onClick={() => setView("dashboard")} className="mb-6 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors">
+          <button onClick={() => setView("dashboard")} className="mb-4 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors">
             ← Torna alla Dashboard
           </button>
-          
+
+          {/* PANNELLO LA MIA SQUADRA */}
+          <PannelloMiaSquadra />
+
+          {/* STORICO PREZZI */}
+          <StoricoPrezzi />
+
           {legaScandicci && (
-            <div className="rounded-2xl border border-blue-800 bg-blue-950/30 p-5 mb-6">
-              <h3 className="text-lg font-bold text-blue-300 mb-2">Profili Avversari (Scandicci League)</h3>
-              <div className="max-h-48 overflow-y-auto text-sm space-y-1">
+            <div className="rounded-2xl border border-blue-800 bg-blue-950/30 p-4 mb-4">
+              <h3 className="text-sm font-bold text-blue-300 mb-2">Profili Avversari (Scandicci League)</h3>
+              <div className="max-h-32 overflow-y-auto text-xs space-y-1">
                 {PROFILI_SCANDICCI.map((p) => (
                   <div key={p.nome} className="flex justify-between">
                     <span className="font-semibold">{p.nome}</span>
@@ -325,81 +558,100 @@ export default function Home() {
             </div>
           )}
 
-          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 mb-6">
-            <h2 className="text-xl font-bold text-white mb-3">Nomi squadre</h2>
-            <div className="space-y-2">
-              {squadre.map((s, idx) => (
-                <div key={s.nome} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={s.nome}
-                    onChange={(e) => cambiaNomeSquadra(idx, e.target.value)}
-                    className="flex-1 rounded-lg border border-gray-700 bg-gray-800 p-2 text-white"
-                  />
-                  <span className="text-sm text-gray-400">Budget: {s.budget}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 mb-6">
-            <h2 className="text-xl font-bold text-white mb-3">Squadre e Budget</h2>
-            <div className="space-y-2">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+            <h2 className="text-sm font-bold text-white mb-2">Squadre e Budget</h2>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
               {squadre.map((s) => (
-                <div key={s.nome} className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-white">{s.nome}</span>
-                  <span className="text-gray-300">Budget: {s.budget}</span>
-                  <span className="text-gray-500">Giocatori: {s.giocatori.length}</span>
+                <div key={s.nome} className="flex items-center justify-between text-xs">
+                  <span className={`font-semibold ${s.nome === miaSquadra ? "text-green-400" : "text-white"}`}>
+                    {s.nome === miaSquadra && "⭐ "}{s.nome}
+                  </span>
+                  <span className="text-gray-300">{s.budget}cr</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 mb-6">
-            <h2 className="text-xl font-bold text-white mb-3">Cerca giocatore</h2>
-            <div className="flex gap-2 mb-3">
-              <select value={filtroRuolo} onChange={(e) => setFiltroRuolo(e.target.value)} className="flex-1 rounded-xl border border-gray-700 bg-gray-800 p-2 text-white">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+            <h2 className="text-sm font-bold text-white mb-2">Cerca giocatore</h2>
+            
+            {/* Filtro Preferiti */}
+            <button
+              onClick={() => setSoloPreferiti(!soloPreferiti)}
+              className={`w-full mb-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                soloPreferiti ? "bg-yellow-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              }`}
+            >
+              ⭐ {soloPreferiti ? `Solo Preferiti (${preferiti.length})` : "Mostra solo preferiti"}
+            </button>
+
+            <div className="flex gap-2 mb-2">
+              <select value={filtroRuolo} onChange={(e) => setFiltroRuolo(e.target.value)} className="flex-1 rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm">
                 <option value="tutti">Tutti i ruoli</option>
                 <option value="P">Portieri</option>
                 <option value="D">Difensori</option>
                 <option value="C">Centrocampisti</option>
                 <option value="A">Attaccanti</option>
               </select>
-              <input type="text" placeholder="Nome..." value={ricerca} onChange={(e) => setRicerca(e.target.value)} className="flex-1 rounded-xl border border-gray-700 bg-gray-800 p-2 text-white" />
+              <input type="text" placeholder="Nome..." value={ricerca} onChange={(e) => setRicerca(e.target.value)} className="flex-1 rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm" />
             </div>
-            <div className="mt-3 max-h-96 overflow-y-auto">
-              {giocatoriFiltrati.map((g, i) => (
-                <button
-                  key={`${g.nome}-${i}`}
-                  onClick={() => setGiocatoreSelezionato(g)}
-                  className={`w-full text-left px-4 py-2 rounded-lg mb-1 ${giocatoreSelezionato?.nome === g.nome ? "bg-green-600 text-white" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
-                >
-                  {g.nome} {g.squadra && `(${g.squadra})`} {g.fvm ? `FVM: ${g.fvm}` : ""}
-                </button>
-              ))}
-              {giocatoriFiltrati.length === 0 && <p className="text-gray-500 text-sm">Nessun giocatore trovato.</p>}
+            <div className="mt-2 max-h-72 overflow-y-auto">
+              {giocatoriFiltrati.map((g, i) => {
+                const isPreferito = preferiti.includes(g.nome);
+                return (
+                  <div key={`${g.nome}-${i}`} className="flex items-center gap-2 mb-1">
+                    <button
+                      onClick={() => setGiocatoreSelezionato(g)}
+                      className={`flex-1 text-left px-3 py-2 rounded-lg text-sm ${giocatoreSelezionato?.nome === g.nome ? "bg-green-600 text-white" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span>{g.nome} {g.squadra && <span className="text-xs text-gray-400">({g.squadra})</span>}</span>
+                        {g.fvm && <span className="text-xs text-blue-300">FVM:{g.fvm}</span>}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => togglePreferito(g.nome)}
+                      className={`p-2 rounded-lg text-lg transition-colors ${isPreferito ? "bg-yellow-600" : "bg-gray-800 hover:bg-gray-700"}`}
+                      title={isPreferito ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti"}
+                    >
+                      {isPreferito ? "⭐" : "☆"}
+                    </button>
+                  </div>
+                );
+              })}
+              {giocatoriFiltrati.length === 0 && <p className="text-gray-500 text-xs text-center py-4">Nessun giocatore trovato.</p>}
             </div>
           </div>
 
           {giocatoreSelezionato && (
-            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 mb-6">
-              <h2 className="text-xl font-bold text-white mb-2">{giocatoreSelezionato.nome}</h2>
-              <p className="text-sm text-gray-400 mb-4">
-                {giocatoreSelezionato.ruolo} • {giocatoreSelezionato.squadra} {giocatoreSelezionato.fvm && `• FVM: ${giocatoreSelezionato.fvm}`}
-              </p>
+            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h2 className="text-lg font-bold text-white">{giocatoreSelezionato.nome}</h2>
+                  <p className="text-xs text-gray-400">
+                    {giocatoreSelezionato.ruolo} • {giocatoreSelezionato.squadra} {giocatoreSelezionato.fvm && `• FVM: ${giocatoreSelezionato.fvm}`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => togglePreferito(giocatoreSelezionato.nome)}
+                  className={`p-2 rounded-lg text-xl ${preferiti.includes(giocatoreSelezionato.nome) ? "bg-yellow-600" : "bg-gray-800"}`}
+                >
+                  {preferiti.includes(giocatoreSelezionato.nome) ? "⭐" : "☆"}
+                </button>
+              </div>
 
-              <div className="mb-4 grid grid-cols-3 gap-3">
-                <div className="rounded-xl bg-green-950 p-3 text-center">
-                  <p className="text-xs text-green-400">Consigliato</p>
-                  <p className="text-xl font-bold">{prezzoConsigliato}</p>
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-green-950 p-2 text-center">
+                  <p className="text-[10px] text-green-400">Consigliato</p>
+                  <p className="text-lg font-bold">{prezzoConsigliato}</p>
                 </div>
-                <div className="rounded-xl bg-orange-950 p-3 text-center">
-                  <p className="text-xs text-orange-400">Aggressivo</p>
-                  <p className="text-xl font-bold">{Math.round(prezzoConsigliato * 1.1)}</p>
+                <div className="rounded-lg bg-orange-950 p-2 text-center">
+                  <p className="text-[10px] text-orange-400">Aggressivo</p>
+                  <p className="text-lg font-bold">{Math.round(prezzoConsigliato * 1.1)}</p>
                 </div>
-                <div className="rounded-xl bg-red-950 p-3 text-center">
-                  <p className="text-xs text-red-400">Massimo</p>
-                  <p className="text-xl font-bold">{Math.round(prezzoConsigliato * 1.2)}</p>
+                <div className="rounded-lg bg-red-950 p-2 text-center">
+                  <p className="text-[10px] text-red-400">Massimo</p>
+                  <p className="text-lg font-bold">{Math.round(prezzoConsigliato * 1.2)}</p>
                 </div>
               </div>
 
@@ -407,64 +659,65 @@ export default function Home() {
                 const infoTitolarita = getTitolarita(giocatoreSelezionato.nome, giocatoreSelezionato.squadra);
                 const infoInfortunio = getInfortunio(giocatoreSelezionato.nome);
                 return (
-                  <div className="mb-4 space-y-2">
+                  <div className="mb-3 space-y-2">
                     {infoTitolarita && (
-                      <div className="rounded-xl bg-gray-800/50 p-3">
-                        <p className="text-sm font-semibold text-blue-300">
+                      <div className="rounded-lg bg-gray-800/50 p-2">
+                        <p className="text-xs font-semibold text-blue-300">
                           Titolarità: {infoTitolarita.percentuale}% {infoTitolarita.posizione && `(${infoTitolarita.posizione})`}
                         </p>
-                        {infoTitolarita.nota && <p className="text-xs text-gray-400">{infoTitolarita.nota}</p>}
+                        {infoTitolarita.nota && <p className="text-[10px] text-gray-400">{infoTitolarita.nota}</p>}
                       </div>
                     )}
                     {infoInfortunio && (
-                      <div className="rounded-xl bg-red-950/40 border border-red-800 p-3">
-                        <p className="text-sm font-semibold text-red-400">⚠️ Infortunato: {infoInfortunio.tipo}</p>
-                        {infoInfortunio.fino_ca && <p className="text-xs text-red-300">Rientro previsto: {infoInfortunio.fino_ca}</p>}
-                        {infoInfortunio.nota && <p className="text-xs text-red-300">{infoInfortunio.nota}</p>}
+                      <div className="rounded-lg bg-red-950/40 border border-red-800 p-2">
+                        <p className="text-xs font-semibold text-red-400">⚠️ Infortunato: {infoInfortunio.tipo}</p>
+                        {infoInfortunio.fino_ca && <p className="text-[10px] text-red-300">Rientro: {infoInfortunio.fino_ca}</p>}
                       </div>
                     )}
                   </div>
                 );
               })()}
 
-              <div className="space-y-3">
-                <input type="number" placeholder="Prezzo pagato" value={prezzo} onChange={(e) => setPrezzo(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-gray-800 p-3 text-white" />
-                <select value={squadraAcquirente} onChange={(e) => setSquadraAcquirente(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-gray-800 p-3 text-white">
+              <div className="space-y-2">
+                <input type="number" placeholder="Prezzo pagato" value={prezzo} onChange={(e) => setPrezzo(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm" />
+                <select value={squadraAcquirente} onChange={(e) => setSquadraAcquirente(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm">
                   {squadre.map((s) => (
-                    <option key={s.nome} value={s.nome}>{s.nome} (Budget: {s.budget})</option>
+                    <option key={s.nome} value={s.nome}>{s.nome} ({s.budget}cr)</option>
                   ))}
                 </select>
-                <button onClick={registraAcquisto} className="w-full rounded-xl bg-orange-600 px-6 py-4 font-bold text-white">Registra Acquisto</button>
+                <button onClick={registraAcquisto} className="w-full rounded-lg bg-orange-600 hover:bg-orange-500 px-4 py-3 font-bold text-white transition-colors">
+                  Registra Acquisto
+                </button>
               </div>
             </div>
           )}
 
           {messaggio && (
-            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 whitespace-pre-wrap mb-6">
-              <p className="text-sm text-gray-300">{messaggio}</p>
+            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-3 whitespace-pre-wrap mb-4">
+              <p className="text-xs text-gray-300">{messaggio}</p>
             </div>
           )}
 
           {acquisti.length > 0 && (
-            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 mb-6">
-              <h3 className="text-lg font-bold text-white mb-3">Ultimi acquisti</h3>
-              <ul className="space-y-2 text-sm text-gray-300">
+            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+              <h3 className="text-sm font-bold text-white mb-2">Ultimi acquisti</h3>
+              <ul className="space-y-1 text-xs text-gray-300 max-h-40 overflow-y-auto">
                 {acquisti.slice(-10).reverse().map((a, i) => (
                   <li key={i} className="flex justify-between">
                     <span>{a.giocatore}</span>
-                    <span>{a.squadra} - {a.prezzo} cr</span>
+                    <span>{a.squadra} - {a.prezzo}cr</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          <div className="flex gap-3">
-             <button onClick={() => setView("rimasti")} className="flex-1 rounded-xl bg-blue-600 px-6 py-4 font-bold text-white hover:bg-blue-500 transition-colors">
-              👥 Calciatori Rimasti
+          <div className="flex gap-2">
+            <button onClick={() => setView("rimasti")} className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-3 text-sm font-bold text-white transition-colors">
+              👥 Rimasti
             </button>
-            <button onClick={resetAsta} className="flex-1 rounded-xl border border-gray-700 bg-gray-800 px-6 py-4 font-semibold text-white hover:bg-gray-700 transition-colors">
-              Azzera asta
+            <button onClick={resetAsta} className="flex-1 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 px-4 py-3 text-sm font-semibold text-white transition-colors">
+              Azzera
             </button>
           </div>
         </div>
@@ -472,9 +725,7 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // 2. RENDER: VISTA CALCATORI RIMASTI
-  // ==========================================
+  // ========== RENDER: VISTA CALCATORI RIMASTI ==========
   if (view === "rimasti") {
     const ruoliOrdinati = ["P", "D", "C", "A"];
     const gruppi = giocatoriDisponibili.reduce((acc, g) => {
@@ -500,55 +751,73 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
-          <button onClick={() => setView("dashboard")} className="mb-6 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors">
-            ← Torna alla Dashboard
+          <button onClick={() => setView("asta")} className="mb-4 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors">
+            ← Torna all'Asta
           </button>
-          <h2 className="text-2xl font-bold text-green-400 mb-6">Calciatori Rimasti</h2>
+          <h2 className="text-2xl font-bold text-green-400 mb-4">Calciatori Rimasti</h2>
+
+          <button
+            onClick={() => setSoloPreferiti(!soloPreferiti)}
+            className={`w-full mb-4 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+              soloPreferiti ? "bg-yellow-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+            }`}
+          >
+            ⭐ {soloPreferiti ? `Mostra tutti (${giocatoriDisponibili.length})` : `Solo preferiti (${preferiti.filter(n => giocatoriDisponibili.some(g => g.nome === n)).length})`}
+          </button>
 
           {giocatoriDisponibili.length === 0 ? (
             <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6 text-center">
               <p className="text-gray-400">Tutti i calciatori sono stati acquistati!</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {chiaviRuoli.map((ruolo) => {
-                const lista = gruppi[ruolo];
+                let lista = gruppi[ruolo];
+                if (soloPreferiti) lista = lista.filter((g) => preferiti.includes(g.nome));
+                if (lista.length === 0) return null;
                 const nomeRuolo = ruolo === "P" ? "Portieri" : ruolo === "D" ? "Difensori" : ruolo === "C" ? "Centrocampisti" : ruolo === "A" ? "Attaccanti" : ruolo;
 
                 return (
-                  <div key={ruolo} className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-                    <h3 className="text-lg font-bold text-orange-400 mb-3 flex items-center gap-2">
-                      <span className="bg-gray-800 px-2 py-1 rounded text-white text-sm">{ruolo}</span>
+                  <div key={ruolo} className="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+                    <h3 className="text-sm font-bold text-orange-400 mb-2 flex items-center gap-2">
+                      <span className="bg-gray-800 px-2 py-0.5 rounded text-white text-xs">{ruolo}</span>
                       {nomeRuolo} ({lista.length})
                     </h3>
-                    <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    <ul className="space-y-2 max-h-96 overflow-y-auto pr-1">
                       {lista.map((g, i) => {
                         const prezzoCons = calcolaPrezzoConsigliato(g);
                         const titolarita = getTitolarita(g.nome, g.squadra);
                         const pctTitolarita = titolarita?.percentuale ?? 0;
+                        const isPreferito = preferiti.includes(g.nome);
                         let coloreTitolarita = "text-red-400";
                         if (pctTitolarita >= 80) coloreTitolarita = "text-green-400";
                         else if (pctTitolarita >= 50) coloreTitolarita = "text-yellow-400";
 
                         return (
-                          <li key={`${g.nome}-${i}`} className="flex flex-col gap-2 border-b border-gray-800 pb-3 last:border-0 last:pb-0">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-semibold text-white">{g.nome}</p>
-                                <p className="text-xs text-gray-400">{g.squadra || "Svincolato"}</p>
+                          <li key={`${g.nome}-${i}`} className="flex items-start gap-2 border-b border-gray-800 pb-2 last:border-0 last:pb-0">
+                            <button
+                              onClick={() => togglePreferito(g.nome)}
+                              className={`p-1 rounded text-sm mt-1 ${isPreferito ? "bg-yellow-600" : "bg-gray-800"}`}
+                            >
+                              {isPreferito ? "⭐" : "☆"}
+                            </button>
+                            <div className="flex-1">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-semibold text-white text-sm">{g.nome}</p>
+                                  <p className="text-[10px] text-gray-400">{g.squadra || "Svincolato"}</p>
+                                </div>
+                                <p className="text-xs font-bold text-blue-300">FMV: {g.fvm || "-"}</p>
                               </div>
-                              <div className="text-right">
-                                <p className="text-sm font-bold text-blue-300">FMV: {g.fvm || "-"}</p>
-                              </div>
-                            </div>
-                            <div className="flex justify-between items-center bg-gray-800/50 rounded-lg p-3">
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-400">Prezzo Consigliato</span>
-                                <span className="text-lg font-bold text-green-400">{prezzoCons} cr</span>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                <span className="text-xs text-gray-400">Titolarità</span>
-                                <span className={`text-lg font-bold ${coloreTitolarita}`}>{pctTitolarita}%</span>
+                              <div className="flex justify-between items-center bg-gray-800/50 rounded-lg p-2 mt-1">
+                                <div>
+                                  <span className="text-[10px] text-gray-400">Prezzo</span>
+                                  <p className="text-sm font-bold text-green-400">{prezzoCons}cr</p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-[10px] text-gray-400">Titolarità</span>
+                                  <p className={`text-sm font-bold ${coloreTitolarita}`}>{pctTitolarita}%</p>
+                                </div>
                               </div>
                             </div>
                           </li>
@@ -565,9 +834,7 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // 3. RENDER: DASHBOARD
-  // ==========================================
+  // ========== RENDER: DASHBOARD ==========
   if (view === "dashboard") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -579,18 +846,27 @@ export default function Home() {
               <p><span className="font-semibold">Budget:</span> {config.budget} crediti</p>
               <p><span className="font-semibold">Modalità:</span> {config.modalita === "classic" ? "Classic" : "Mantra"}</p>
               <p><span className="font-semibold">Giocatori importati:</span> {giocatori.length}</p>
+              <p><span className="font-semibold">Preferiti:</span> {preferiti.length}</p>
             </div>
           </div>
 
           <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
             <h3 className="text-lg font-bold mb-3">Primi 20 giocatori</h3>
             <ul className="space-y-2 max-h-96 overflow-y-auto">
-              {giocatori.slice(0, 20).map((g, i) => (
-                <li key={i} className="flex justify-between text-sm text-gray-300">
-                  <span>{g.nome}</span>
-                  <span>{g.squadra || "-"}</span>
-                </li>
-              ))}
+              {giocatori.slice(0, 20).map((g, i) => {
+                const isPreferito = preferiti.includes(g.nome);
+                return (
+                  <li key={i} className="flex justify-between items-center text-sm text-gray-300">
+                    <span className="flex items-center gap-2">
+                      <button onClick={() => togglePreferito(g.nome)} className={`text-sm ${isPreferito ? "text-yellow-400" : "text-gray-600"}`}>
+                        {isPreferito ? "⭐" : "☆"}
+                      </button>
+                      {g.nome}
+                    </span>
+                    <span>{g.squadra || "-"}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
 
@@ -609,9 +885,13 @@ export default function Home() {
               localStorage.removeItem("fantai-squadre");
               localStorage.removeItem("fantai-acquisti");
               localStorage.removeItem("fantai-lega-scandicci");
+              localStorage.removeItem("fantai-preferiti");
+              localStorage.removeItem("fantai-mia-squadra");
               setGiocatori([]);
               setSquadre([]);
               setAcquisti([]);
+              setPreferiti([]);
+              setMiaSquadra("");
               window.location.reload();
             }}
             className="mt-3 w-full rounded-xl bg-gray-700 px-6 py-3 font-semibold text-white hover:bg-gray-600 transition-colors"
@@ -623,9 +903,7 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // 4. RENDER: IMPORT
-  // ==========================================
+  // ========== RENDER: IMPORT ==========
   if (view === "import") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -639,9 +917,7 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // 5. RENDER: WIZARD (Default)
-  // ==========================================
+  // ========== RENDER: WIZARD ==========
   return (
     <main className="min-h-screen bg-black text-white px-5 py-8">
       <div className="mx-auto w-full max-w-md">
