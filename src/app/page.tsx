@@ -106,29 +106,31 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
- // Inizializza squadre quando si entra in asta
+// Carica lo stato dell'asta da localStorage ogni volta che si entra nella vista "asta"
 useEffect(() => {
   if (view === "asta") {
+    // Carica SEMPRE da localStorage se disponibile
     const squadreSalvate = localStorage.getItem("fantai-squadre");
+    const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
+    const acquistiSalvati = localStorage.getItem("fantai-acquisti");
+
     if (squadreSalvate) {
       const parsed = JSON.parse(squadreSalvate);
       setSquadre(parsed);
-      if (parsed.length > 0) setSquadraAcquirente(parsed[0].nome);
-    } else {
-      const iniziali: Squadra[] = legaScandicci
-        ? PROFILI_SCANDICCI.map((p) => ({
-            nome: p.nome,
-            budget: config.budget,
-            giocatori: [],
-          }))
-        : Array.from({ length: config.partecipanti }, (_, i) => ({
-            nome: `Squadra ${i + 1}`,
-            budget: config.budget,
-            giocatori: [],
-          }));
-      setSquadre(iniziali);
-      setSquadraAcquirente(iniziali[0]?.nome || "");
+      if (parsed.length > 0 && !squadraAcquirente) {
+        setSquadraAcquirente(parsed[0].nome);
+      }
     }
+
+    if (giocatoriSalvati) {
+      setGiocatori(JSON.parse(giocatoriSalvati));
+    }
+
+    if (acquistiSalvati) {
+      setAcquisti(JSON.parse(acquistiSalvati));
+    }
+  }
+}, [view, squadraAcquirente]); // Aggiunta dipendenza per evitare loop infinito
 
     const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
     if (giocatoriSalvati) {
@@ -150,11 +152,28 @@ useEffect(() => {
     setConfig((prev) => ({ ...prev, ...modifiche }));
   };
 
-  const salvaConfigurazione = () => {
-    localStorage.setItem("fantai-legaconfig", JSON.stringify(config));
-    localStorage.setItem("fantai-lega-scandicci", JSON.stringify(legaScandicci));
-    setView("import");
-  };
+ const salvaConfigurazione = () => {
+  localStorage.setItem("fantai-legaconfig", JSON.stringify(config));
+  localStorage.setItem("fantai-lega-scandicci", JSON.stringify(legaScandicci));
+
+  // Inizializza e salva subito le squadre in localStorage
+  const squadreIniziali: Squadra[] = legaScandicci
+    ? PROFILI_SCANDICCI.map((p) => ({
+        nome: p.nome,
+        budget: config.budget,
+        giocatori: [],
+      }))
+    : Array.from({ length: config.partecipanti }, (_, i) => ({
+        nome: `Squadra ${i + 1}`,
+        budget: config.budget,
+        giocatori: [],
+      }));
+
+  localStorage.setItem("fantai-squadre", JSON.stringify(squadreIniziali));
+  localStorage.setItem("fantai-acquisti", JSON.stringify([])); // Salva anche acquisti vuoti
+
+  setView("import");
+};
 
   const handleImportComplete = (players: Player[]) => {
     setGiocatori(players);
