@@ -11,12 +11,7 @@ interface LegaConfig {
   partecipanti: number;
   budget: number;
   modalita: "classic" | "mantra";
-  rosa: {
-    P: number;
-    D: number;
-    C: number;
-    A: number;
-  };
+  rosa: { P: number; D: number; C: number; A: number };
   regole: {
     modificatoreDifesa: boolean;
     imbattibilita: boolean;
@@ -79,13 +74,7 @@ const configIniziale: LegaConfig = {
   budget: 500,
   modalita: "classic",
   rosa: { P: 3, D: 8, C: 8, A: 6 },
-  regole: {
-    modificatoreDifesa: false,
-    imbattibilita: false,
-    portaInviolata: false,
-    assist: true,
-    rigori: true,
-  },
+  regole: { modificatoreDifesa: false, imbattibilita: false, portaInviolata: false, assist: true, rigori: true },
   ordineAsta: "random",
 };
 
@@ -106,44 +95,29 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
-// Carica lo stato dell'asta da localStorage ogni volta che si entra nella vista "asta"
-useEffect(() => {
-  if (view === "asta") {
-    // Carica SEMPRE da localStorage se disponibile
-    const squadreSalvate = localStorage.getItem("fantai-squadre");
-    const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
-    const acquistiSalvati = localStorage.getItem("fantai-acquisti");
+  // Carica i dati salvati all'avvio (una sola volta)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const cfg = localStorage.getItem("fantai-legaconfig");
+      if (cfg) setConfig(JSON.parse(cfg));
+      
+      const ls = localStorage.getItem("fantai-lega-scandicci");
+      if (ls) setLegaScandicci(JSON.parse(ls));
 
-    if (squadreSalvate) {
-      const parsed = JSON.parse(squadreSalvate);
-      setSquadre(parsed);
-      if (parsed.length > 0 && !squadraAcquirente) {
-        setSquadraAcquirente(parsed[0].nome);
+      const pl = localStorage.getItem("fantai-giocatori");
+      if (pl) setGiocatori(JSON.parse(pl));
+
+      const sq = localStorage.getItem("fantai-squadre");
+      if (sq) {
+        const parsed = JSON.parse(sq);
+        setSquadre(parsed);
+        if (parsed.length > 0) setSquadraAcquirente(parsed[0].nome);
       }
-    }
 
-    if (giocatoriSalvati) {
-      setGiocatori(JSON.parse(giocatoriSalvati));
+      const ac = localStorage.getItem("fantai-acquisti");
+      if (ac) setAcquisti(JSON.parse(ac));
     }
-
-    if (acquistiSalvati) {
-      setAcquisti(JSON.parse(acquistiSalvati));
-    }
-  }
-}, [view, squadraAcquirente]); // Aggiunta dipendenza per evitare loop infinito
-
-    const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
-    if (giocatoriSalvati) {
-      setGiocatori(JSON.parse(giocatoriSalvati));
-    }
-
-    const acquistiSalvati = localStorage.getItem("fantai-acquisti");
-    if (acquistiSalvati) {
-      setAcquisti(JSON.parse(acquistiSalvati));
-    }
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [view]);
+  }, []);
 
   const vaiAvanti = () => setPasso((p) => Math.min(p + 1, 7));
   const vaiIndietro = () => setPasso((p) => Math.max(p - 1, 1));
@@ -152,28 +126,22 @@ useEffect(() => {
     setConfig((prev) => ({ ...prev, ...modifiche }));
   };
 
- const salvaConfigurazione = () => {
-  localStorage.setItem("fantai-legaconfig", JSON.stringify(config));
-  localStorage.setItem("fantai-lega-scandicci", JSON.stringify(legaScandicci));
-
-  // Inizializza e salva subito le squadre in localStorage
-  const squadreIniziali: Squadra[] = legaScandicci
-    ? PROFILI_SCANDICCI.map((p) => ({
-        nome: p.nome,
-        budget: config.budget,
-        giocatori: [],
-      }))
-    : Array.from({ length: config.partecipanti }, (_, i) => ({
-        nome: `Squadra ${i + 1}`,
-        budget: config.budget,
-        giocatori: [],
-      }));
-
-  localStorage.setItem("fantai-squadre", JSON.stringify(squadreIniziali));
-  localStorage.setItem("fantai-acquisti", JSON.stringify([])); // Salva anche acquisti vuoti
-
-  setView("import");
-};
+  const salvaConfigurazione = () => {
+    localStorage.setItem("fantai-legaconfig", JSON.stringify(config));
+    localStorage.setItem("fantai-lega-scandicci", JSON.stringify(legaScandicci));
+    
+    // Inizializza le squadre solo se non esistono già
+    if (!localStorage.getItem("fantai-squadre")) {
+      const squadreIniziali: Squadra[] = legaScandicci
+        ? PROFILI_SCANDICCI.map((p) => ({ nome: p.nome, budget: config.budget, giocatori: [] }))
+        : Array.from({ length: config.partecipanti }, (_, i) => ({ nome: `Squadra ${i + 1}`, budget: config.budget, giocatori: [] }));
+      
+      localStorage.setItem("fantai-squadre", JSON.stringify(squadreIniziali));
+      localStorage.setItem("fantai-acquisti", JSON.stringify([]));
+    }
+    
+    setView("import");
+  };
 
   const handleImportComplete = (players: Player[]) => {
     setGiocatori(players);
@@ -181,25 +149,17 @@ useEffect(() => {
     setView("dashboard");
   };
 
-  // -------- FUNZIONI PER L'ASTA ----------
   const giocatoriDisponibili = useMemo(() => {
-    return giocatori.filter(
-      (g) => !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome))
-    );
+    return giocatori.filter((g) => !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome)));
   }, [giocatori, squadre]);
 
   const giocatoriFiltrati = useMemo(() => {
     let lista = giocatoriDisponibili;
-    if (filtroRuolo !== "tutti") {
-      lista = lista.filter((g) => g.ruolo === filtroRuolo);
-    }
-    if (ricerca.trim()) {
-      lista = lista.filter((g) => g.nome.toLowerCase().includes(ricerca.toLowerCase()));
-    }
+    if (filtroRuolo !== "tutti") lista = lista.filter((g) => g.ruolo === filtroRuolo);
+    if (ricerca.trim()) lista = lista.filter((g) => g.nome.toLowerCase().includes(ricerca.toLowerCase()));
     return [...lista].sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
   }, [giocatoriDisponibili, filtroRuolo, ricerca]);
 
-  // Controlla se un ruolo è esaurito e genera analisi
   useEffect(() => {
     const ruoli = ["P", "D", "C", "A"];
     const nuoviCompletati = new Set(ruoliCompletatiRef.current);
@@ -222,7 +182,6 @@ useEffect(() => {
     }
   }, [giocatoriDisponibili, squadre, giocatori]);
 
-  // Algoritmo prezzo consigliato con dati storici
   const calcolaPrezzoConsigliato = (player: Player): number => {
     const base = player.fvm || player.quotazioneIniziale || 10;
     const fattoreScala = config.budget / 1000;
@@ -243,10 +202,7 @@ useEffect(() => {
 
     const ruolo = player.ruolo || "";
     const fabbisognoRuolo = config.rosa[ruolo as keyof typeof config.rosa] || 5;
-    const giocatoriRuoloAcquistati = squadre.reduce(
-      (sum, s) => sum + s.giocatori.filter((g) => g.ruolo === ruolo).length,
-      0
-    );
+    const giocatoriRuoloAcquistati = squadre.reduce((sum, s) => sum + s.giocatori.filter((g) => g.ruolo === ruolo).length, 0);
     const totaleNecessario = config.partecipanti * fabbisognoRuolo;
     const domanda = Math.max(1, totaleNecessario - giocatoriRuoloAcquistati);
     const fattoreDomanda = 1 + (domanda / totaleNecessario) * 0.5;
@@ -256,14 +212,9 @@ useEffect(() => {
 
     let fattoreProfilo = 1;
     if (legaScandicci && squadre.length > 0) {
-      const profiliInteressati = PROFILI_SCANDICCI.filter(
-        (p) => p.distribuzione[ruolo as keyof typeof p.distribuzione] > 25
-      );
+      const profiliInteressati = PROFILI_SCANDICCI.filter((p) => p.distribuzione[ruolo as keyof typeof p.distribuzione] > 25);
       if (profiliInteressati.length > 0) {
-        const mediaInteresse = profiliInteressati.reduce(
-          (sum, p) => sum + p.distribuzione[ruolo as keyof typeof p.distribuzione],
-          0
-        ) / profiliInteressati.length;
+        const mediaInteresse = profiliInteressati.reduce((sum, p) => sum + p.distribuzione[ruolo as keyof typeof p.distribuzione], 0) / profiliInteressati.length;
         fattoreProfilo = 1 + (mediaInteresse - 20) / 100;
       }
     }
@@ -275,18 +226,9 @@ useEffect(() => {
 
     const nomeNormalizzato = normalizzaNome(player.nome);
     const prezzoStorico = PREZZI_STORICI[nomeNormalizzato];
-    let prezzoFinale: number;
+    let prezzoFinale = prezzoStorico !== undefined ? Math.round(0.6 * prezzoStorico + 0.4 * prezzoAlgoritmo) : prezzoAlgoritmo;
 
-    if (prezzoStorico !== undefined) {
-      prezzoFinale = Math.round(0.6 * prezzoStorico + 0.4 * prezzoAlgoritmo);
-    } else {
-      prezzoFinale = prezzoAlgoritmo;
-    }
-
-    prezzoFinale = Math.min(prezzoFinale, limiteMassimo);
-    prezzoFinale = Math.max(1, prezzoFinale);
-
-    return prezzoFinale;
+    return Math.max(1, Math.min(prezzoFinale, limiteMassimo));
   };
 
   const prezzoConsigliato = useMemo(() => {
@@ -306,13 +248,8 @@ useEffect(() => {
     }
 
     const squadraIndex = squadre.findIndex((s) => s.nome === squadraAcquirente);
-    if (squadraIndex === -1) {
-      setMessaggio("Squadra non trovata.");
-      return;
-    }
-
-    if (squadre[squadraIndex].budget < prezzoNum) {
-      setMessaggio(`Budget insufficiente per ${squadre[squadraIndex].nome}.`);
+    if (squadraIndex === -1 || squadre[squadraIndex].budget < prezzoNum) {
+      setMessaggio("Squadra non trovata o budget insufficiente.");
       return;
     }
 
@@ -324,15 +261,7 @@ useEffect(() => {
     };
 
     setSquadre(nuoveSquadre);
-
-    const nuovoAcquisto: Acquisto = {
-      giocatore: giocatoreSelezionato.nome,
-      squadra: squadraAcquirente,
-      prezzo: prezzoNum,
-      timestamp: new Date().toISOString(),
-    };
-
-    const nuoviAcquisti = [...acquisti, nuovoAcquisto];
+    const nuoviAcquisti = [...acquisti, { giocatore: giocatoreSelezionato.nome, squadra: squadraAcquirente, prezzo: prezzoNum, timestamp: new Date().toISOString() }];
     setAcquisti(nuoviAcquisti);
 
     localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
@@ -344,20 +273,11 @@ useEffect(() => {
   };
 
   const resetAsta = () => {
-    const conferma = window.confirm("Vuoi azzerare tutta l'asta?");
-    if (!conferma) return;
+    if (!window.confirm("Vuoi azzerare tutta l'asta?")) return;
 
     const iniziali: Squadra[] = legaScandicci
-      ? PROFILI_SCANDICCI.map((p) => ({
-          nome: p.nome,
-          budget: config.budget,
-          giocatori: [],
-        }))
-      : Array.from({ length: config.partecipanti }, (_, i) => ({
-          nome: `Squadra ${i + 1}`,
-          budget: config.budget,
-          giocatori: [],
-        }));
+      ? PROFILI_SCANDICCI.map((p) => ({ nome: p.nome, budget: config.budget, giocatori: [] }))
+      : Array.from({ length: config.partecipanti }, (_, i) => ({ nome: `Squadra ${i + 1}`, budget: config.budget, giocatori: [] }));
 
     setSquadre(iniziali);
     setAcquisti([]);
@@ -366,8 +286,8 @@ useEffect(() => {
     setMessaggio("");
     ruoliCompletatiRef.current = new Set();
 
-    localStorage.removeItem("fantai-squadre");
-    localStorage.removeItem("fantai-acquisti");
+    localStorage.setItem("fantai-squadre", JSON.stringify(iniziali));
+    localStorage.setItem("fantai-acquisti", JSON.stringify([]));
     setSquadraAcquirente(iniziali[0]?.nome || "");
   };
 
@@ -376,31 +296,23 @@ useEffect(() => {
     nuoveSquadre[indice] = { ...nuoveSquadre[indice], nome: nuovoNome };
     setSquadre(nuoveSquadre);
     localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
-    if (squadraAcquirente === squadre[indice]?.nome) {
-      setSquadraAcquirente(nuovoNome);
-    }
+    if (squadraAcquirente === squadre[indice]?.nome) setSquadraAcquirente(nuovoNome);
   };
 
-  const generaAnalisiRuolo = (ruolo: string, squadre: Squadra[], giocatori: Player[]): string => {
+  const generaAnalisiRuolo = (ruolo: string, squadreList: Squadra[], giocatoriList: Player[]): string => {
     const ruoliMap: Record<string, string> = { P: "Portieri", D: "Difensori", C: "Centrocampisti", A: "Attaccanti" };
     const nomeRuolo = ruoliMap[ruolo] || ruolo;
     let analisi = `Analisi ${nomeRuolo}:\n`;
 
-    for (const squadra of squadre) {
+    for (const squadra of squadreList) {
       const giocatoriRuolo = squadra.giocatori.filter((g) => g.ruolo === ruolo);
       if (giocatoriRuolo.length === 0) {
         analisi += `• ${squadra.nome}: nessun ${nomeRuolo.toLowerCase()} acquistato (molto rischioso).\n`;
         continue;
       }
-
       const fvmMedio = giocatoriRuolo.reduce((sum, g) => sum + (g.fvm || 0), 0) / giocatoriRuolo.length;
       const nomi = giocatoriRuolo.map((g) => g.nome).join(", ");
-      let giudizio = "";
-
-      if (fvmMedio > 40) giudizio = "ottimo reparto";
-      else if (fvmMedio > 25) giudizio = "reparto solido";
-      else giudizio = "reparto debole";
-
+      const giudizio = fvmMedio > 40 ? "ottimo reparto" : fvmMedio > 25 ? "reparto solido" : "reparto debole";
       analisi += `• ${squadra.nome}: ${nomi} (FVM medio: ${fvmMedio.toFixed(1)}). ${giudizio}.\n`;
     }
     return analisi;
@@ -432,13 +344,9 @@ useEffect(() => {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
-          <button
-            onClick={() => setView("dashboard")}
-            className="mb-6 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors"
-          >
+          <button onClick={() => setView("dashboard")} className="mb-6 text-gray-400 underline flex items-center gap-2 hover:text-white transition-colors">
             ← Torna alla Dashboard
           </button>
-
           <h2 className="text-2xl font-bold text-green-400 mb-6">Calciatori Rimasti</h2>
 
           {giocatoriDisponibili.length === 0 ? (
@@ -449,8 +357,7 @@ useEffect(() => {
             <div className="space-y-6">
               {chiaviRuoli.map((ruolo) => {
                 const lista = gruppi[ruolo];
-                const nomeRuolo =
-                  ruolo === "P" ? "Portieri" : ruolo === "D" ? "Difensori" : ruolo === "C" ? "Centrocampisti" : ruolo === "A" ? "Attaccanti" : ruolo;
+                const nomeRuolo = ruolo === "P" ? "Portieri" : ruolo === "D" ? "Difensori" : ruolo === "C" ? "Centrocampisti" : ruolo === "A" ? "Attaccanti" : ruolo;
 
                 return (
                   <div key={ruolo} className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
@@ -460,10 +367,9 @@ useEffect(() => {
                     </h3>
                     <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
                       {lista.map((g, i) => {
-                        const prezzoConsigliato = calcolaPrezzoConsigliato(g);
+                        const prezzoCons = calcolaPrezzoConsigliato(g);
                         const titolarita = getTitolarita(g.nome, g.squadra);
                         const pctTitolarita = titolarita?.percentuale ?? 0;
-
                         let coloreTitolarita = "text-red-400";
                         if (pctTitolarita >= 80) coloreTitolarita = "text-green-400";
                         else if (pctTitolarita >= 50) coloreTitolarita = "text-yellow-400";
@@ -479,11 +385,10 @@ useEffect(() => {
                                 <p className="text-sm font-bold text-blue-300">FMV: {g.fvm || "-"}</p>
                               </div>
                             </div>
-
                             <div className="flex justify-between items-center bg-gray-800/50 rounded-lg p-3">
                               <div className="flex flex-col">
                                 <span className="text-xs text-gray-400">Prezzo Consigliato</span>
-                                <span className="text-lg font-bold text-green-400">{prezzoConsigliato} cr</span>
+                                <span className="text-lg font-bold text-green-400">{prezzoCons} cr</span>
                               </div>
                               <div className="flex flex-col items-end">
                                 <span className="text-xs text-gray-400">Titolarità</span>
@@ -531,17 +436,11 @@ useEffect(() => {
             </ul>
           </div>
 
-          <button
-            onClick={() => setView("asta")}
-            className="mt-6 w-full rounded-xl bg-orange-600 px-6 py-4 font-bold text-white hover:bg-orange-500 transition-colors"
-          >
+          <button onClick={() => setView("asta")} className="mt-6 w-full rounded-xl bg-orange-600 px-6 py-4 font-bold text-white hover:bg-orange-500 transition-colors">
             Modalità Asta
           </button>
 
-          <button
-            onClick={() => setView("rimasti")}
-            className="mt-3 w-full rounded-xl bg-blue-600 px-6 py-4 font-bold text-white hover:bg-blue-500 transition-colors"
-          >
+          <button onClick={() => setView("rimasti")} className="mt-3 w-full rounded-xl bg-blue-600 px-6 py-4 font-bold text-white hover:bg-blue-500 transition-colors">
             👥 Calciatori Rimasti
           </button>
 
@@ -572,13 +471,7 @@ useEffect(() => {
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
           <ImportListone onComplete={handleImportComplete} />
-          <button
-            onClick={() => {
-              setView("wizard");
-              setPasso(7);
-            }}
-            className="mt-6 w-full rounded-xl border border-gray-700 bg-gray-800 px-5 py-3 font-semibold text-white active:scale-[0.98]"
-          >
+          <button onClick={() => { setView("wizard"); setPasso(7); }} className="mt-6 w-full rounded-xl border border-gray-700 bg-gray-800 px-5 py-3 font-semibold text-white active:scale-[0.98]">
             Modifica configurazione
           </button>
         </div>
@@ -607,24 +500,10 @@ useEffect(() => {
               <h2 className="text-2xl font-bold">Benvenuto in FantAI</h2>
               <p className="mt-4 text-gray-400">Scegli il tipo di lega per iniziare.</p>
               <div className="mt-8 space-y-3">
-                <button
-                  onClick={() => {
-                    setLegaScandicci(false);
-                    setConfig({ ...configIniziale, partecipanti: 8 });
-                    vaiAvanti();
-                  }}
-                  className="w-full rounded-xl bg-orange-600 px-6 py-4 text-lg font-bold active:scale-95"
-                >
+                <button onClick={() => { setLegaScandicci(false); setConfig({ ...configIniziale, partecipanti: 8 }); vaiAvanti(); }} className="w-full rounded-xl bg-orange-600 px-6 py-4 text-lg font-bold active:scale-95">
                   Nuova Lega
                 </button>
-                <button
-                  onClick={() => {
-                    setLegaScandicci(true);
-                    setConfig({ ...configIniziale, partecipanti: 10 });
-                    vaiAvanti();
-                  }}
-                  className="w-full rounded-xl bg-blue-600 px-6 py-4 text-lg font-bold active:scale-95"
-                >
+                <button onClick={() => { setLegaScandicci(true); setConfig({ ...configIniziale, partecipanti: 10 }); vaiAvanti(); }} className="w-full rounded-xl bg-blue-600 px-6 py-4 text-lg font-bold active:scale-95">
                   Scandicci League
                 </button>
               </div>
@@ -638,13 +517,7 @@ useEffect(() => {
             <p className="mt-2 text-gray-400">Quante squadre partecipano?</p>
             <div className="mt-6 grid grid-cols-2 gap-3">
               {[6, 8, 10, 12].map((numero) => (
-                <button
-                  key={numero}
-                  onClick={() => aggiornaConfig({ partecipanti: numero })}
-                  className={`rounded-xl border p-5 text-xl font-bold ${
-                    config.partecipanti === numero ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"
-                  }`}
-                >
+                <button key={numero} onClick={() => aggiornaConfig({ partecipanti: numero })} className={`rounded-xl border p-5 text-xl font-bold ${config.partecipanti === numero ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
                   {numero}
                 </button>
               ))}
@@ -660,14 +533,7 @@ useEffect(() => {
           <section>
             <h2 className="text-2xl font-bold">Budget iniziale</h2>
             <p className="mt-2 text-gray-400">Quanti crediti avrà ogni squadra?</p>
-            <input
-              type="number"
-              min={1}
-              inputMode="numeric"
-              value={config.budget}
-              onChange={(e) => aggiornaConfig({ budget: Number(e.target.value) })}
-              className="mt-6 w-full rounded-xl border border-gray-700 bg-gray-900 p-4 text-2xl font-bold text-white"
-            />
+            <input type="number" min={1} inputMode="numeric" value={config.budget} onChange={(e) => aggiornaConfig({ budget: Number(e.target.value) })} className="mt-6 w-full rounded-xl border border-gray-700 bg-gray-900 p-4 text-2xl font-bold text-white" />
             <div className="mt-8 flex justify-between">
               <button onClick={vaiIndietro} className="text-gray-400 underline">Indietro</button>
               <button onClick={vaiAvanti} className="rounded-xl bg-orange-600 px-7 py-3 font-bold">Avanti</button>
@@ -680,20 +546,10 @@ useEffect(() => {
             <h2 className="text-2xl font-bold">Modalità</h2>
             <p className="mt-2 text-gray-400">Scegli la modalità della lega.</p>
             <div className="mt-6 space-y-3">
-              <button
-                onClick={() => aggiornaConfig({ modalita: "classic" })}
-                className={`w-full rounded-xl border p-5 text-left ${
-                  config.modalita === "classic" ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"
-                }`}
-              >
+              <button onClick={() => aggiornaConfig({ modalita: "classic" })} className={`w-full rounded-xl border p-5 text-left ${config.modalita === "classic" ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
                 <p className="font-bold">Classic</p>
               </button>
-              <button
-                onClick={() => aggiornaConfig({ modalita: "mantra" })}
-                className={`w-full rounded-xl border p-5 text-left ${
-                  config.modalita === "mantra" ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"
-                }`}
-              >
+              <button onClick={() => aggiornaConfig({ modalita: "mantra" })} className={`w-full rounded-xl border p-5 text-left ${config.modalita === "mantra" ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
                 <p className="font-bold">Mantra</p>
               </button>
             </div>
@@ -709,31 +565,22 @@ useEffect(() => {
             <h2 className="text-2xl font-bold">Composizione rosa</h2>
             <p className="mt-2 text-gray-400">Imposta i giocatori per ruolo.</p>
             <div className="mt-6 space-y-3">
-              {(
-                [
-                  ["P", "Portieri"],
-                  ["D", "Difensori"],
-                  ["C", "Centrocampisti"],
-                  ["A", "Attaccanti"],
-                ] as const
-              ).map(([chiave, nome]) => (
-                <div key={chiave} className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
-                  <span className="text-gray-300">{nome}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={config.rosa[chiave]}
-                    onChange={(e) =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        rosa: { ...prev.rosa, [chiave]: Number(e.target.value) },
-                      }))
-                    }
-                    className="w-20 rounded-lg border border-gray-700 bg-gray-800 p-2 text-center font-bold"
-                  />
-                </div>
-              ))}
+              {(["P", "D", "C", "A"] as const).map((chiave) => {
+                const nome = chiave === "P" ? "Portieri" : chiave === "D" ? "Difensori" : chiave === "C" ? "Centrocampisti" : "Attaccanti";
+                return (
+                  <div key={chiave} className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
+                    <span className="text-gray-300">{nome}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={config.rosa[chiave]}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, rosa: { ...prev.rosa, [chiave]: Number(e.target.value) } }))}
+                      className="w-20 rounded-lg border border-gray-700 bg-gray-800 p-2 text-center font-bold"
+                    />
+                  </div>
+                );
+              })}
             </div>
             <div className="mt-8 flex justify-between">
               <button onClick={vaiIndietro} className="text-gray-400 underline">Indietro</button>
@@ -747,27 +594,10 @@ useEffect(() => {
             <h2 className="text-2xl font-bold">Regole</h2>
             <p className="mt-2 text-gray-400">Seleziona le regole della lega.</p>
             <div className="mt-6 space-y-3">
-              {(
-                [
-                  ["modificatoreDifesa", "Modificatore difesa"],
-                  ["imbattibilita", "Imbattibilità"],
-                  ["portaInviolata", "Porta inviolata"],
-                  ["assist", "Assist"],
-                  ["rigori", "Rigori"],
-                ] as const
-              ).map(([chiave, nome]) => {
+              {(["modificatoreDifesa", "imbattibilita", "portaInviolata", "assist", "rigori"] as const).map(([chiave, nome]) => {
                 const attiva = config.regole[chiave];
                 return (
-                  <button
-                    key={chiave}
-                    onClick={() =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        regole: { ...prev.regole, [chiave]: !attiva },
-                      }))
-                    }
-                    className="flex w-full items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4"
-                  >
+                  <button key={chiave} onClick={() => setConfig((prev) => ({ ...prev, regole: { ...prev.regole, [chiave]: !attiva } }))} className="flex w-full items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
                     <span className="text-gray-300">{nome}</span>
                     <span className={`h-7 w-12 rounded-full p-1 ${attiva ? "bg-green-600" : "bg-gray-700"}`}>
                       <span className={`block h-5 w-5 rounded-full bg-white transition-transform ${attiva ? "translate-x-5" : ""}`} />
@@ -788,20 +618,8 @@ useEffect(() => {
             <h2 className="text-2xl font-bold">Ordine asta</h2>
             <p className="mt-2 text-gray-400">Scegli come gestire l'ordine.</p>
             <div className="mt-6 space-y-3">
-              {(
-                [
-                  ["random", "Random per ruolo"],
-                  ["libera", "Libera"],
-                  ["manuale", "Manuale"],
-                ] as const
-              ).map(([valore, nome]) => (
-                <button
-                  key={valore}
-                  onClick={() => aggiornaConfig({ ordineAsta: valore as LegaConfig["ordineAsta"] })}
-                  className={`w-full rounded-xl border p-5 text-left ${
-                    config.ordineAsta === valore ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"
-                  }`}
-                >
+              {(["random", "libera", "manuale"] as const).map(([valore, nome]) => (
+                <button key={valore} onClick={() => aggiornaConfig({ ordineAsta: valore as LegaConfig["ordineAsta"] })} className={`w-full rounded-xl border p-5 text-left ${config.ordineAsta === valore ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
                   <p className="font-bold">{nome}</p>
                 </button>
               ))}
