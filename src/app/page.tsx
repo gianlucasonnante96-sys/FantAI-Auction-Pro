@@ -174,7 +174,7 @@ export default function Home() {
 
   const esportaRosa = (formato: "testo" | "csv") => {
     if (!miaSquadra) {
-      setMessaggioExport("⚠️ Seleziona prima la tua squadra nel pannello 'La Mia Squadra'.");
+      setMessaggioExport("⚠️ Seleziona prima la tua squadra.");
       setTimeout(() => setMessaggioExport(""), 3000);
       return;
     }
@@ -396,21 +396,32 @@ export default function Home() {
     return analisi;
   };
 
+  // ==========================================
+  // COMPONENTE: PANNELLO "LA MIA SQUADRA" (CORRETTO)
+  // ==========================================
   const PannelloMiaSquadra = () => {
     if (!miaSquadra || !datiMiaSquadra) {
       return (
         <div className="rounded-2xl border border-yellow-700 bg-yellow-950/30 p-4 mb-4">
-          <p className="text-sm text-yellow-300 mb-2">⚙️ Seleziona la tua squadra per attivare il pannello:</p>
-          <select
-            value={miaSquadra}
-            onChange={(e) => cambiaMiaSquadra(e.target.value)}
-            className="w-full rounded-lg border border-yellow-700 bg-gray-800 p-2 text-white text-sm"
-          >
-            <option value="">-- Scegli --</option>
-            {squadre.map((s) => (
-              <option key={s.nome} value={s.nome}>{s.nome}</option>
-            ))}
-          </select>
+          <p className="text-sm text-yellow-300 mb-2">⚙️ Seleziona la tua squadra:</p>
+          {squadre.length === 0 ? (
+            <p className="text-xs text-gray-400">Nessuna squadra disponibile.</p>
+          ) : (
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) cambiaMiaSquadra(e.target.value);
+              }}
+              className="w-full rounded-lg border border-yellow-700 bg-gray-800 p-2 text-white text-sm appearance-none"
+            >
+              <option value="">-- Scegli la tua squadra --</option>
+              {squadre.map((s) => (
+                <option key={s.nome} value={s.nome} className="text-gray-900 bg-white">
+                  {s.nome}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       );
     }
@@ -424,7 +435,15 @@ export default function Home() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-xs text-green-400 font-semibold tracking-wider">LA MIA SQUADRA</p>
-            <h3 className="text-lg font-bold text-white">{miaSquadra}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white">{miaSquadra}</h3>
+              <button
+                onClick={() => cambiaMiaSquadra("")}
+                className="text-xs text-gray-400 hover:text-yellow-400 underline transition-colors"
+              >
+                (Cambia)
+              </button>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-400">Budget</p>
