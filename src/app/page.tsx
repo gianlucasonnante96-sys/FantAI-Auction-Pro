@@ -113,11 +113,8 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
-  // ========== FUNZIONE: CALCOLA FMV PROPORZIONATO ==========
   const calcolaFMVProporzionato = (fvmOriginale: number | undefined): number => {
     if (!fvmOriginale) return 0;
-    // Formula: (FMV_originale * budget_scelto) / 1000
-    // Con minimo di 1 se FMV_originale è 1
     if (fvmOriginale === 1) return 1;
     const proporzionato = (fvmOriginale * config.budget) / 1000;
     return Math.max(1, Math.round(proporzionato));
@@ -241,6 +238,45 @@ export default function Home() {
     return [...lista].sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
   }, [giocatoriDisponibili, filtroRuolo, ricerca, soloPreferiti, preferiti]);
 
+  // ========== NUOVO: Lista preferiti con dati completi ==========
+  const preferitiConDati = useMemo(() => {
+    return giocatori
+      .filter((g) => preferiti.includes(g.nome))
+      .sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
+  }, [giocatori, preferiti]);
+
+  // ========== NUOVO: Preferiti raggruppati per ruolo ==========
+  const preferitiPerRuolo = useMemo(() => {
+    const gruppi: Record<string, Player[]> = { P: [], D: [], C: [], A: [] };
+    preferitiConDati.forEach((g) => {
+      const r = g.ruolo || "VAR";
+      if (gruppi[r]) gruppi[r].push(g);
+      else {
+        if (!gruppi["VAR"]) gruppi["VAR"] = [];
+        gruppi["VAR"].push(g);
+      }
+    });
+    return gruppi;
+  }, [preferitiConDati]);
+
+  // ========== NUOVO: Statistiche preferiti ==========
+  const statistichePreferiti = useMemo(() => {
+    const totale = preferitiConDati.length;
+    const fvmMedio = totale > 0 
+      ? Math.round(preferitiConDati.reduce((sum, g) => sum + (g.fvm || 0), 0) / totale)
+      : 0;
+    const fvmMedioProp = totale > 0
+      ? Math.round(preferitiConDati.reduce((sum, g) => sum + calcolaFMVProporzionato(g.fvm), 0) / totale)
+      : 0;
+    const prezzoMedioCons = totale > 0
+      ? Math.round(preferitiConDati.reduce((sum, g) => sum + calcolaPrezzoConsigliato(g), 0) / totale)
+      : 0;
+    const ancoraDisponibili = preferitiConDati.filter((g) => 
+      !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome))
+    ).length;
+    return { totale, fvmMedio, fvmMedioProp, prezzoMedioCons, ancoraDisponibili };
+  }, [preferitiConDati, squadre]);
+
   const storicoPerRuolo = useMemo(() => {
     const storico: Record<string, { nome: string; prezzo: number; squadra: string }[]> = { P: [], D: [], C: [], A: [] };
     acquisti.slice().reverse().forEach((a) => {
@@ -286,7 +322,6 @@ export default function Home() {
   }, [giocatoriDisponibili, squadre, giocatori]);
 
   const calcolaPrezzoConsigliato = (player: Player): number => {
-    // Usa FMV proporzionato invece di quello originale
     const base = calcolaFMVProporzionato(player.fvm) || player.quotazioneIniziale || 10;
     const fattoreScala = config.budget / 1000;
     let prezzoBase = base * fattoreScala;
@@ -848,51 +883,171 @@ export default function Home() {
     );
   }
 
+  // ==========================================
+  // ========== DASHBOARD POTENZIATA ==========
+  // ==========================================
   if (view === "dashboard") {
+    const iconeRuolo: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
+    const nomiRuolo: Record<string, string> = { P: "Portieri", D: "Difensori", C: "Centrocampisti", A: "Attaccanti" };
+    const ruoliOrd: ("P" | "D" | "C" | "A")[] = ["P", "D", "C", "A"];
+
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
-            <h2 className="text-2xl font-bold text-green-400">Dashboard</h2>
-            <div className="mt-4 space-y-2 text-sm text-gray-300">
-              <p><span className="font-semibold">Partecipanti:</span> {config.partecipanti}</p>
-              <p><span className="font-semibold">Budget:</span> {config.budget} crediti</p>
-              <p><span className="font-semibold">Modalità:</span> {config.modalita === "classic" ? "Classic" : "Mantra"}</p>
-              <p><span className="font-semibold">Giocatori importati:</span> {giocatori.length}</p>
-              <p><span className="font-semibold">Preferiti:</span> {preferiti.length}</p>
+          
+          {/* ========== HEADER ========== */}
+          <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-gray-900 to-gray-950 p-6 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold tracking-widest text-orange-500">FANTAI AUCTION PRO</p>
+                <h2 className="text-2xl font-bold text-green-400 mt-1">Dashboard</h2>
+              </div>
+              <div className="text-4xl">📊</div>
+            </div>
+            
+            {/* Statistiche rapide */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-gray-800/60 p-3">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Partecipanti</p>
+                <p className="text-xl font-bold text-white">{config.partecipanti}</p>
+              </div>
+              <div className="rounded-xl bg-gray-800/60 p-3">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Budget</p>
+                <p className="text-xl font-bold text-white">{config.budget}<span className="text-xs text-gray-400">cr</span></p>
+              </div>
+              <div className="rounded-xl bg-gray-800/60 p-3">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Giocatori</p>
+                <p className="text-xl font-bold text-white">{giocatori.length}</p>
+              </div>
+              <div className="rounded-xl bg-gray-800/60 p-3">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Disponibili</p>
+                <p className="text-xl font-bold text-green-400">{giocatoriDisponibili.length}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-400">
+              <span>Modalità: <span className="text-white font-semibold">{config.modalita === "classic" ? "Classic" : "Mantra"}</span></span>
+              <span>Acquisti: <span className="text-white font-semibold">{acquisti.length}</span></span>
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5">
-            <h3 className="text-lg font-bold mb-3">Primi 20 giocatori</h3>
-            <ul className="space-y-2 max-h-96 overflow-y-auto">
-              {giocatori.slice(0, 20).map((g, i) => {
-                const isPreferito = preferiti.includes(g.nome);
-                return (
-                  <li key={i} className="flex justify-between items-center text-sm text-gray-300">
-                    <span className="flex items-center gap-2">
-                      <button onClick={() => togglePreferito(g.nome)} className={`text-sm ${isPreferito ? "text-yellow-400" : "text-gray-600"}`}>
-                        {isPreferito ? "⭐" : "☆"}
-                      </button>
-                      {g.nome}
-                    </span>
-                    <span>{g.squadra || "-"}</span>
-                  </li>
-                );
-              })}
-            </ul>
+          {/* ========== I MIEI PREFERITI ========== */}
+          <div className="rounded-2xl border border-yellow-700/50 bg-gradient-to-br from-yellow-950/20 to-gray-900 p-5 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2">
+                ⭐ I Miei Preferiti
+              </h3>
+              <span className="text-xs bg-yellow-600/30 text-yellow-300 px-2 py-1 rounded-full font-semibold">
+                {preferiti.length} {preferiti.length === 1 ? "giocatore" : "giocatori"}
+              </span>
+            </div>
+
+            {preferiti.length === 0 ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-2">🌟</div>
+                <p className="text-sm text-gray-400 mb-1">Nessun preferito selezionato</p>
+                <p className="text-xs text-gray-500">
+                  Vai in "Modalità Asta" e premi ⭐ accanto ai giocatori che vuoi puntare!
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Mini statistiche preferiti */}
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+                    <p className="text-[10px] text-gray-400">Disponibili</p>
+                    <p className="text-sm font-bold text-green-400">{statistichePreferiti.ancoraDisponibili}/{statistichePreferiti.totale}</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+                    <p className="text-[10px] text-gray-400">FVM medio</p>
+                    <p className="text-sm font-bold text-blue-400">{statistichePreferiti.fvmMedioProp}</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+                    <p className="text-[10px] text-gray-400">Prezzo medio</p>
+                    <p className="text-sm font-bold text-orange-400">{statistichePreferiti.prezzoMedioCons}cr</p>
+                  </div>
+                </div>
+
+                {/* Lista per ruolo */}
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                  {ruoliOrd.map((r) => {
+                    const lista = preferitiPerRuolo[r] || [];
+                    if (lista.length === 0) return null;
+                    return (
+                      <div key={r}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">{iconeRuolo[r]}</span>
+                          <span className="text-sm font-bold text-white">{nomiRuolo[r]}</span>
+                          <span className="text-xs text-gray-400">({lista.length})</span>
+                        </div>
+                        <div className="space-y-1">
+                          {lista.map((g, i) => {
+                            const fvmProp = calcolaFMVProporzionato(g.fvm);
+                            const prezzoCons = calcolaPrezzoConsigliato(g);
+                            const ancoraDisponibile = !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome));
+                            return (
+                              <div 
+                                key={`${g.nome}-${i}`} 
+                                className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                                  ancoraDisponibile ? "bg-gray-800/60" : "bg-gray-800/20 opacity-50"
+                                }`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className={`text-sm font-semibold truncate ${ancoraDisponibile ? "text-white" : "text-gray-500 line-through"}`}>
+                                      {g.nome}
+                                    </p>
+                                    {!ancoraDisponibile && (
+                                      <span className="text-[10px] bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded">
+                                        VENDUTO
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-400">
+                                    {g.squadra || "Svincolato"} • FVM: {fvmProp} • Prezzo: {prezzoCons}cr
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => togglePreferito(g.nome)}
+                                  className="ml-2 p-1.5 rounded-lg bg-gray-700 hover:bg-red-700 transition-colors"
+                                  title="Rimuovi dai preferiti"
+                                >
+                                  <span className="text-sm">✕</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
-          <button onClick={() => setView("asta")} className="mt-6 w-full rounded-xl bg-orange-600 px-6 py-4 font-bold text-white hover:bg-orange-500 transition-colors">
-            Modalità Asta
-          </button>
+          {/* ========== PULSANTI AZIONE RAPIDI ========== */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <button 
+              onClick={() => setView("asta")} 
+              className="rounded-xl bg-gradient-to-br from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 px-4 py-4 font-bold text-white transition-all active:scale-95"
+            >
+              <div className="text-2xl mb-1">🎯</div>
+              <div className="text-sm">Asta</div>
+            </button>
+            <button 
+              onClick={() => setView("rimasti")} 
+              className="rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 px-4 py-4 font-bold text-white transition-all active:scale-95"
+            >
+              <div className="text-2xl mb-1">👥</div>
+              <div className="text-sm">Rimasti</div>
+            </button>
+          </div>
 
-          <button onClick={() => setView("rimasti")} className="mt-3 w-full rounded-xl bg-blue-600 px-6 py-4 font-bold text-white hover:bg-blue-500 transition-colors">
-            👥 Calciatori Rimasti
-          </button>
-
+          {/* ========== RESET ========== */}
           <button
             onClick={() => {
+              if (!window.confirm("Vuoi davvero reimpostare tutto? Perderai tutti i dati.")) return;
               localStorage.removeItem("fantai-legaconfig");
               localStorage.removeItem("fantai-giocatori");
               localStorage.removeItem("fantai-squadre");
@@ -907,9 +1062,9 @@ export default function Home() {
               setMiaSquadra("");
               window.location.reload();
             }}
-            className="mt-3 w-full rounded-xl bg-gray-700 px-6 py-3 font-semibold text-white hover:bg-gray-600 transition-colors"
+            className="w-full rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 px-6 py-3 text-sm font-semibold text-gray-300 transition-colors"
           >
-            Reimposta tutto
+            🔄 Reimposta tutto
           </button>
         </div>
       </main>
