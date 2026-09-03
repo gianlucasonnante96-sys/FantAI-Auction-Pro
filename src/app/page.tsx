@@ -106,7 +106,6 @@ export default function Home() {
   const [filtroRuolo, setFiltroRuolo] = useState<string>("tutti");
   const [legaScandicci, setLegaScandicci] = useState<boolean>(false);
   
-  // NUOVI STATI PER LE FUNZIONALITÀ AVANZATE
   const [preferiti, setPreferiti] = useState<string[]>([]);
   const [miaSquadra, setMiaSquadra] = useState<string>("");
   const [soloPreferiti, setSoloPreferiti] = useState<boolean>(false);
@@ -114,7 +113,6 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
-  // Caricamento dati da localStorage all'avvio
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cfg = localStorage.getItem("fantai-legaconfig");
@@ -161,7 +159,6 @@ export default function Home() {
     setView("dashboard");
   };
 
-  // ========== FUNZIONI PREFERITI ==========
   const togglePreferito = (nome: string) => {
     setPreferiti((prev) => {
       const nuovi = prev.includes(nome) ? prev.filter((n) => n !== nome) : [...prev, nome];
@@ -175,7 +172,6 @@ export default function Home() {
     localStorage.setItem("fantai-mia-squadra", nome);
   };
 
-  // ========== FUNZIONE ESPORTAZIONE ROSA ==========
   const esportaRosa = (formato: "testo" | "csv") => {
     if (!miaSquadra) {
       setMessaggioExport("⚠️ Seleziona prima la tua squadra nel pannello 'La Mia Squadra'.");
@@ -223,7 +219,6 @@ export default function Home() {
     }
   };
 
-  // ========== CALCOLI DERIVATI ==========
   const giocatoriDisponibili = useMemo(() => {
     return giocatori.filter((g) => !squadre.some((s) => s.giocatori.some((sg) => sg.nome === g.nome)));
   }, [giocatori, squadre]);
@@ -236,7 +231,6 @@ export default function Home() {
     return [...lista].sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
   }, [giocatoriDisponibili, filtroRuolo, ricerca, soloPreferiti, preferiti]);
 
-  // Storico prezzi per ruolo (ultimi 5 acquisti)
   const storicoPerRuolo = useMemo(() => {
     const storico: Record<string, { nome: string; prezzo: number; squadra: string }[]> = { P: [], D: [], C: [], A: [] };
     acquisti.slice().reverse().forEach((a) => {
@@ -249,7 +243,6 @@ export default function Home() {
     return storico;
   }, [acquisti, giocatori]);
 
-  // La mia squadra (dati)
   const datiMiaSquadra = useMemo(() => {
     if (!miaSquadra) return null;
     const sq = squadre.find((s) => s.nome === miaSquadra);
@@ -403,7 +396,6 @@ export default function Home() {
     return analisi;
   };
 
-  // ========== COMPONENTE: PANNELLO "LA MIA SQUADRA" ==========
   const PannelloMiaSquadra = () => {
     if (!miaSquadra || !datiMiaSquadra) {
       return (
@@ -445,7 +437,7 @@ export default function Home() {
             const max = config.rosa[r];
             const attuale = perRuolo[r].length;
             const disponibili = giocatoriDisponibili.filter((g) => g.ruolo === r).length;
-            const allarme = attuali < max && disponibili <= 3;
+            const allarme = attuale < max && disponibili <= 3;
             return (
               <div key={r} className={`rounded-lg p-2 text-center ${allarme ? "bg-red-950 border border-red-700" : "bg-gray-800/60"}`}>
                 <div className="text-lg">{icone[r]}</div>
@@ -488,7 +480,6 @@ export default function Home() {
     );
   };
 
-  // ========== COMPONENTE: STORICO PREZZI ==========
   const StoricoPrezzi = () => {
     const ruoliOrd: ("P" | "D" | "C" | "A")[] = ["P", "D", "C", "A"];
     const icone: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
@@ -529,7 +520,6 @@ export default function Home() {
     );
   };
 
-  // ========== RENDER: VISTA ASTA ==========
   if (view === "asta") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -538,10 +528,7 @@ export default function Home() {
             ← Torna alla Dashboard
           </button>
 
-          {/* PANNELLO LA MIA SQUADRA */}
           <PannelloMiaSquadra />
-
-          {/* STORICO PREZZI */}
           <StoricoPrezzi />
 
           {legaScandicci && (
@@ -575,7 +562,6 @@ export default function Home() {
           <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
             <h2 className="text-sm font-bold text-white mb-2">Cerca giocatore</h2>
             
-            {/* Filtro Preferiti */}
             <button
               onClick={() => setSoloPreferiti(!soloPreferiti)}
               className={`w-full mb-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
@@ -725,7 +711,6 @@ export default function Home() {
     );
   }
 
-  // ========== RENDER: VISTA CALCATORI RIMASTI ==========
   if (view === "rimasti") {
     const ruoliOrdinati = ["P", "D", "C", "A"];
     const gruppi = giocatoriDisponibili.reduce((acc, g) => {
@@ -834,7 +819,6 @@ export default function Home() {
     );
   }
 
-  // ========== RENDER: DASHBOARD ==========
   if (view === "dashboard") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -903,7 +887,6 @@ export default function Home() {
     );
   }
 
-  // ========== RENDER: IMPORT ==========
   if (view === "import") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -917,7 +900,6 @@ export default function Home() {
     );
   }
 
-  // ========== RENDER: WIZARD ==========
   return (
     <main className="min-h-screen bg-black text-white px-5 py-8">
       <div className="mx-auto w-full max-w-md">
