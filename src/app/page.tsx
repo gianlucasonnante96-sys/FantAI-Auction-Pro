@@ -689,7 +689,14 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Composizione rosa</h2>
             <p className="mt-2 text-gray-400">Imposta i giocatori per ruolo.</p>
             <div className="mt-6 space-y-3">
-              {(["P", "D", "C", "A"] as const).map(([chiave, nome]) => (
+              {(
+                [
+                  ["P", "Portieri"],
+                  ["D", "Difensori"],
+                  ["C", "Centrocampisti"],
+                  ["A", "Attaccanti"],
+                ] as const
+              ).map(([chiave, nome]) => (
                 <div key={chiave} className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
                   <span className="text-gray-300">{nome}</span>
                   <input
@@ -720,7 +727,15 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Regole</h2>
             <p className="mt-2 text-gray-400">Seleziona le regole della lega.</p>
             <div className="mt-6 space-y-3">
-              {(["modificatoreDifesa", "imbattibilita", "portaInviolata", "assist", "rigori"] as const).map(([chiave, nome]) => {
+              {(
+                [
+                  ["modificatoreDifesa", "Modificatore difesa"],
+                  ["imbattibilita", "Imbattibilità"],
+                  ["portaInviolata", "Porta inviolata"],
+                  ["assist", "Assist"],
+                  ["rigori", "Rigori"],
+                ] as const
+              ).map(([chiave, nome]) => {
                 const attiva = config.regole[chiave];
                 return (
                   <button
@@ -753,7 +768,13 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Ordine asta</h2>
             <p className="mt-2 text-gray-400">Scegli come gestire l'ordine.</p>
             <div className="mt-6 space-y-3">
-              {(["random", "libera", "manuale"] as const).map(([valore, nome]) => (
+              {(
+                [
+                  ["random", "Random per ruolo"],
+                  ["libera", "Libera"],
+                  ["manuale", "Manuale"],
+                ] as const
+              ).map(([valore, nome]) => (
                 <button
                   key={valore}
                   onClick={() => aggiornaConfig({ ordineAsta: valore as LegaConfig["ordineAsta"] })}
