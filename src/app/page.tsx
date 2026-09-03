@@ -75,6 +75,31 @@ const configIniziale: LegaConfig = {
   ordineAsta: "random",
 };
 
+// Definizione esplicita dei tipi per le liste del wizard (risolve gli errori TypeScript)
+type RosaChiave = keyof typeof configIniziale.rosa;
+const rosaLista: [RosaChiave, string][] = [
+  ["P", "Portieri"],
+  ["D", "Difensori"],
+  ["C", "Centrocampisti"],
+  ["A", "Attaccanti"],
+];
+
+type RegolaChiave = keyof typeof configIniziale.regole;
+const regoleLista: [RegolaChiave, string][] = [
+  ["modificatoreDifesa", "Modificatore difesa"],
+  ["imbattibilita", "Imbattibilità"],
+  ["portaInviolata", "Porta inviolata"],
+  ["assist", "Assist"],
+  ["rigori", "Rigori"],
+];
+
+type OrdineChiave = typeof configIniziale.ordineAsta;
+const ordineLista: [OrdineChiave, string][] = [
+  ["random", "Random per ruolo"],
+  ["libera", "Libera"],
+  ["manuale", "Manuale"],
+];
+
 export default function Home() {
   const [view, setView] = useState<"wizard" | "import" | "dashboard" | "asta" | "rimasti">("wizard");
   const [passo, setPasso] = useState(1);
@@ -556,22 +581,19 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Composizione rosa</h2>
             <p className="mt-2 text-gray-400">Imposta i giocatori per ruolo.</p>
             <div className="mt-6 space-y-3">
-              {(["P", "D", "C", "A"] as const).map((chiave) => {
-                const nome = chiave === "P" ? "Portieri" : chiave === "D" ? "Difensori" : chiave === "C" ? "Centrocampisti" : "Attaccanti";
-                return (
-                  <div key={chiave} className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
-                    <span className="text-gray-300">{nome}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      value={config.rosa[chiave]}
-                      onChange={(e) => setConfig((prev) => ({ ...prev, rosa: { ...prev.rosa, [chiave]: Number(e.target.value) } }))}
-                      className="w-20 rounded-lg border border-gray-700 bg-gray-800 p-2 text-center font-bold"
-                    />
-                  </div>
-                );
-              })}
+              {rosaLista.map(([chiave, nome]) => (
+                <div key={chiave} className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
+                  <span className="text-gray-300">{nome}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    value={config.rosa[chiave]}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, rosa: { ...prev.rosa, [chiave]: Number(e.target.value) } }))}
+                    className="w-20 rounded-lg border border-gray-700 bg-gray-800 p-2 text-center font-bold"
+                  />
+                </div>
+              ))}
             </div>
             <div className="mt-8 flex justify-between">
               <button onClick={vaiIndietro} className="text-gray-400 underline">Indietro</button>
@@ -585,7 +607,7 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Regole</h2>
             <p className="mt-2 text-gray-400">Seleziona le regole della lega.</p>
             <div className="mt-6 space-y-3">
-              {(["modificatoreDifesa", "imbattibilita", "portaInviolata", "assist", "rigori"] as const).map(([chiave, nome]) => {
+              {regoleLista.map(([chiave, nome]) => {
                 const attiva = config.regole[chiave];
                 return (
                   <button key={chiave} onClick={() => setConfig((prev) => ({ ...prev, regole: { ...prev.regole, [chiave]: !attiva } }))} className="flex w-full items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-4">
@@ -609,8 +631,8 @@ export default function Home() {
             <h2 className="text-2xl font-bold">Ordine asta</h2>
             <p className="mt-2 text-gray-400">Scegli come gestire l'ordine.</p>
             <div className="mt-6 space-y-3">
-              {(["random", "libera", "manuale"] as const).map(([valore, nome]) => (
-                <button key={valore} onClick={() => aggiornaConfig({ ordineAsta: valore as LegaConfig["ordineAsta"] })} className={`w-full rounded-xl border p-5 text-left ${config.ordineAsta === valore ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
+              {ordineLista.map(([valore, nome]) => (
+                <button key={valore} onClick={() => aggiornaConfig({ ordineAsta: valore })} className={`w-full rounded-xl border p-5 text-left ${config.ordineAsta === valore ? "border-green-500 bg-green-600" : "border-gray-700 bg-gray-900"}`}>
                   <p className="font-bold">{nome}</p>
                 </button>
               ))}
