@@ -113,6 +113,16 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
+  // ========== FUNZIONE: CALCOLA FMV PROPORZIONATO ==========
+  const calcolaFMVProporzionato = (fvmOriginale: number | undefined): number => {
+    if (!fvmOriginale) return 0;
+    // Formula: (FMV_originale * budget_scelto) / 1000
+    // Con minimo di 1 se FMV_originale è 1
+    if (fvmOriginale === 1) return 1;
+    const proporzionato = (fvmOriginale * config.budget) / 1000;
+    return Math.max(1, Math.round(proporzionato));
+  };
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cfg = localStorage.getItem("fantai-legaconfig");
@@ -276,7 +286,8 @@ export default function Home() {
   }, [giocatoriDisponibili, squadre, giocatori]);
 
   const calcolaPrezzoConsigliato = (player: Player): number => {
-    const base = player.fvm || player.quotazioneIniziale || 10;
+    // Usa FMV proporzionato invece di quello originale
+    const base = calcolaFMVProporzionato(player.fvm) || player.quotazioneIniziale || 10;
     const fattoreScala = config.budget / 1000;
     let prezzoBase = base * fattoreScala;
     let inflazione = 1;
@@ -284,7 +295,7 @@ export default function Home() {
       const mediaPagata = acquisti.reduce((sum, a) => sum + a.prezzo, 0) / acquisti.length;
       const mediaBase = acquisti.reduce((sum, a) => {
         const giocatore = giocatori.find((g) => g.nome === a.giocatore);
-        return sum + (giocatore?.fvm || giocatore?.quotazioneIniziale || 10);
+        return sum + (calcolaFMVProporzionato(giocatore?.fvm) || giocatore?.quotazioneIniziale || 10);
       }, 0) / acquisti.length;
       if (mediaBase > 0) {
         inflazione = mediaPagata / mediaBase;
@@ -388,7 +399,7 @@ export default function Home() {
         analisi += `• ${squadra.nome}: nessun ${nomeRuolo.toLowerCase()} acquistato (molto rischioso).\n`;
         continue;
       }
-      const fvmMedio = giocatoriRuolo.reduce((sum, g) => sum + (g.fvm || 0), 0) / giocatoriRuolo.length;
+      const fvmMedio = giocatoriRuolo.reduce((sum, g) => sum + (calcolaFMVProporzionato(g.fvm) || 0), 0) / giocatoriRuolo.length;
       const nomi = giocatoriRuolo.map((g) => g.nome).join(", ");
       const giudizio = fvmMedio > 40 ? "ottimo reparto" : fvmMedio > 25 ? "reparto solido" : "reparto debole";
       analisi += `• ${squadra.nome}: ${nomi} (FVM medio: ${fvmMedio.toFixed(1)}). ${giudizio}.\n`;
@@ -396,9 +407,6 @@ export default function Home() {
     return analisi;
   };
 
-  // ==========================================
-  // COMPONENTE: PANNELLO "LA MIA SQUADRA" (CORRETTO)
-  // ==========================================
   const PannelloMiaSquadra = () => {
     if (!miaSquadra || !datiMiaSquadra) {
       return (
@@ -603,6 +611,7 @@ export default function Home() {
             <div className="mt-2 max-h-72 overflow-y-auto">
               {giocatoriFiltrati.map((g, i) => {
                 const isPreferito = preferiti.includes(g.nome);
+                const fvmProporzionato = calcolaFMVProporzionato(g.fvm);
                 return (
                   <div key={`${g.nome}-${i}`} className="flex items-center gap-2 mb-1">
                     <button
@@ -611,7 +620,7 @@ export default function Home() {
                     >
                       <div className="flex justify-between items-center">
                         <span>{g.nome} {g.squadra && <span className="text-xs text-gray-400">({g.squadra})</span>}</span>
-                        {g.fvm && <span className="text-xs text-blue-300">FVM:{g.fvm}</span>}
+                        {fvmProporzionato > 0 && <span className="text-xs text-blue-300">FVM:{fvmProporzionato}</span>}
                       </div>
                     </button>
                     <button
@@ -634,7 +643,7 @@ export default function Home() {
                 <div>
                   <h2 className="text-lg font-bold text-white">{giocatoreSelezionato.nome}</h2>
                   <p className="text-xs text-gray-400">
-                    {giocatoreSelezionato.ruolo} • {giocatoreSelezionato.squadra} {giocatoreSelezionato.fvm && `• FVM: ${giocatoreSelezionato.fvm}`}
+                    {giocatoreSelezionato.ruolo} • {giocatoreSelezionato.squadra} {calcolaFMVProporzionato(giocatoreSelezionato.fvm) > 0 && `• FVM: ${calcolaFMVProporzionato(giocatoreSelezionato.fvm)}`}
                   </p>
                 </div>
                 <button
@@ -687,7 +696,7 @@ export default function Home() {
                 <input type="number" placeholder="Prezzo pagato" value={prezzo} onChange={(e) => setPrezzo(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm" />
                 <select value={squadraAcquirente} onChange={(e) => setSquadraAcquirente(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 p-2 text-white text-sm">
                   {squadre.map((s) => (
-                    <option key={s.nome} value={s.nome}>{s.nome} ({s.budget}cr)</option>
+                    <option key={s.nome} value={s.nome} className="text-gray-900 bg-white">{s.nome} ({s.budget}cr)</option>
                   ))}
                 </select>
                 <button onClick={registraAcquisto} className="w-full rounded-lg bg-orange-600 hover:bg-orange-500 px-4 py-3 font-bold text-white transition-colors">
@@ -793,6 +802,7 @@ export default function Home() {
                         const titolarita = getTitolarita(g.nome, g.squadra);
                         const pctTitolarita = titolarita?.percentuale ?? 0;
                         const isPreferito = preferiti.includes(g.nome);
+                        const fvmProporzionato = calcolaFMVProporzionato(g.fvm);
                         let coloreTitolarita = "text-red-400";
                         if (pctTitolarita >= 80) coloreTitolarita = "text-green-400";
                         else if (pctTitolarita >= 50) coloreTitolarita = "text-yellow-400";
@@ -811,7 +821,7 @@ export default function Home() {
                                   <p className="font-semibold text-white text-sm">{g.nome}</p>
                                   <p className="text-[10px] text-gray-400">{g.squadra || "Svincolato"}</p>
                                 </div>
-                                <p className="text-xs font-bold text-blue-300">FMV: {g.fvm || "-"}</p>
+                                <p className="text-xs font-bold text-blue-300">FMV: {fvmProporzionato || "-"}</p>
                               </div>
                               <div className="flex justify-between items-center bg-gray-800/50 rounded-lg p-2 mt-1">
                                 <div>
