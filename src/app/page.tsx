@@ -324,22 +324,164 @@ export default function Home() {
     }
   }, [giocatoriDisponibili, squadre, giocatori]);
 
-  const calcolaPrezzoConsigliato = (player: Player): number => {
-    const base = calcolaFMVProporzionato(player.fvm) || player.quotazioneIniziale || 10;
-    const fattoreScala = config.budget / 1000;
-    let prezzoBase = base * fattoreScala;
+    const calcolaPrezzoConsigliato = (player: Player): number => {
+    // ===== 1. BASE: FMV proporzionato al budget =====
+    const fvmProp = calcolaFMVProporzionato(player.fvm);
+    const base = fvmProp || player.quotazioneIniziale || 10;
+    let prezzoBase = base * (config.budget / 1000);
+
+    // ===== 2. INFLAZIONE: trend del mercato basato sugli acquisti =====
     let inflazione = 1;
-    if (acquisti.length > 0) {
-      const mediaPagata = acquisti.reduce((sum, a) => sum + a.prezzo, 0) / acquisti.length;
-      const mediaBase = acquisti.reduce((sum, a) => {
-        const giocatore = giocatori.find((g) => g.nome === a.giocatore);
-        return sum + (calcolaFMVProporzionato(giocatore?.fvm) || giocatore?.quotazioneIniziale || 10);
-      }, 0) / acquisti.length;
+    if (acquisti.length >= 3) {
+      const ultimi10 = acquisti.slice(-10);
+      const mediaPagata = ultimi10.reduce((sum, a) => sum + a.prezzo, 0) / ultimi10.length;
+      const mediaBase = ultimi10.reduce((sum, a) => {
+        const g = giocatori.find((gioc) => gioc.nome === a.giocatore);
+        return sum + (calcolaFMVProporzionato(g?.fvm) || g?.quotazioneIniziale || 10);
+      }, 0) / ultimi10.length;
       if (mediaBase > 0) {
         inflazione = mediaPagata / mediaBase;
-        inflazione = Math.max(0.8, Math.min(inflazione, 1.5));
+        inflazione = Math.max(0.75, Math.min(inflazione, 1.6));
       }
     }
+
+    // ===== 3. DOMANDA PER RUOLO =====
+    const ruolo = player.ruolo || "";
+    const fabbisognoRuolo = config.rosa[ruolo as keyof typeof config.rosa] || 5;
+    const giocatoriRuoloAcquistati = squadre.reduce(
+      (sum, s) => sum + s.giocatori.filter((g) => g.ruolo === ruolo).length, 0
+    );
+    const totaleNecessario = config.partecipanti * fabbisognoRuolo;
+    const domanda = Math.max(1, totaleNecessario - giocatoriRuoloAcquistati);
+    const fattoreDomanda = 1 + (domanda / totaleNecessario) * 0.5;
+
+    // ===== 4. CONCORRENZA REALE PER RUOLO (NUOVO) =====
+    // Quante squadre hanno ancora bisogno di giocatori in questo ruolo?
+    const squadreCheDevonoCoprire = squadre.filter((s) => {
+      const giocatoriRuoloSquadra = s.giocatori.filter((g) => g.ruolo === ruolo).length;
+      return giocatoriRuoloSquadra < fabbisognoRuolo;
+    }).length;
+    const concorrenzaRatio = squadreCheDevonoCoprire / Math.max(1, squadre.length);
+    const fattoreConcorrenza = 0.85 + (concorrenzaRatio * 0.45); // 0.85 → 1.30
+
+    // ===== 5. BUDGET RESIDUO REALE (NUOVO) =====
+    // Non solo quanto budget è rimasto, ma quanto ne serve ancora
+    const budgetResiduoMedio = squadre.length > 0
+      ? squadre.reduce((sum, s) => sum + s.budget, 0) / squadre.length
+      : config.budget;
+    const slotTotaliMancanti = squadre.reduce((sum, s) => {
+      const giocatoriTotali = s.giocatori.length;
+      const slotTotali = config.rosa.P + config.rosa.D + config.rosa.C + config.rosa.A;
+      return sum + Math.max(0, slotTotali - giocatoriTotali);
+    }, 0);
+    const budgetPerSlot = slotTotaliMancanti > 0 ? budgetResiduoMedio / (slotTotaliMancanti / squadre.length) : budgetResiduoMedio;
+    const budgetAttesoPerSlot = config.budget / (config.rosa.P + config.rosa.D + config.rosa.C + config.rosa.A);
+    const fattoreBudget = Math.max(0.7, Math.min(1.2, budgetPerSlot / Math.max(1, budgetAttesoPerSlot)));
+
+    // ===== 6. FASE DELL'ASTA (NUOVO) =====
+    // All'inizio i prezzi sono più alti, poi calano
+    const totaleGiocatoriDaVendere = giocatori.length;
+    const giocatoriGiaVenduti = acquisti.length;
+    const progressoAsta = totaleGiocatoriDaVendere > 0 ? giocatoriGiaVenduti / totaleGiocatoriDaVendere : 0;
+    let fattoreFase: number;
+    if (progressoAsta < 0.15) {
+      // Fase iniziale: entusiasmo, prezzi più alti
+      fattoreFase = 1.10;
+    } else if (progressoAsta < 0.40) {
+      // Fase calda: prezzi stabili
+      fattoreFase = 1.0;
+    } else if (progressoAsta < 0.70) {
+      // Fase media: leggera flessione
+      fattoreFase = 0.95;
+    } else {
+      // Fase finale: budget ridotti, prezzi in calo
+      fattoreFase = 0.85 + (1 - progressoAsta) * 0.15;
+    }
+
+    // ===== 7. TITOLARITÀ (NUOVO) =====
+    const infoTitolarita = getTitolarita(player.nome, player.squadra);
+    let fattoreTitolarita = 1.0;
+    if (infoTitolarita) {
+      const pct = infoTitolarita.percentuale;
+      if (pct >= 90) fattoreTitolarita = 1.20;       // Titolare fisso
+      else if (pct >= 75) fattoreTitolarita = 1.10;   // Quasi titolare
+      else if (pct >= 50) fattoreTitolarita = 1.0;    // Ballottaggio
+      else if (pct >= 30) fattoreTitolarita = 0.85;   // Riserva con chance
+      else if (pct >= 15) fattoreTitolarita = 0.75;   // Riserva
+      else fattoreTitolarita = 0.65;                   // Terza scelta
+    }
+
+    // ===== 8. INFORTUNIO (NUOVO) =====
+    const infoInfortunio = getInfortunio(player.nome);
+    let fattoreInfortunio = 1.0;
+    if (infoInfortunio) {
+      const tipo = infoInfortunio.tipo.toLowerCase();
+      if (tipo.includes("lungo") || tipo.includes("grave") || tipo.includes("crociato") || tipo.includes("rottura")) {
+        fattoreInfortunio = 0.50;  // Infortunio grave
+      } else if (tipo.includes("medio") || tipo.includes("frattura") || tipo.includes("muscolare")) {
+        fattoreInfortunio = 0.70;  // Infortunio medio
+      } else {
+        fattoreInfortunio = 0.85;  // Infortunio lieve
+      }
+      // Se c'è una data di rientro vicina, penalizza meno
+      if (infoInfortunio.fino_ca) {
+        const rientro = new Date(infoInfortunio.fino_ca);
+        const oggi = new Date();
+        const giorniMancanti = Math.ceil((rientro.getTime() - oggi.getTime()) / (1000 * 60 * 60 * 24));
+        if (giorniMancanti <= 14) fattoreInfortunio = Math.min(1.0, fattoreInfortunio + 0.15);
+        else if (giorniMancanti <= 30) fattoreInfortunio = Math.min(1.0, fattoreInfortunio + 0.05);
+      }
+    }
+
+    // ===== 9. FATTORE PROFILO STORICO (Scandicci) =====
+    let fattoreProfilo = 1;
+    if (legaScandicci && squadre.length > 0) {
+      const profiliInteressati = PROFILI_SCANDICCI.filter(
+        (p) => p.distribuzione[ruolo as keyof typeof p.distribuzione] > 25
+      );
+      if (profiliInteressati.length > 0) {
+        const mediaInteresse = profiliInteressati.reduce(
+          (sum, p) => sum + p.distribuzione[ruolo as keyof typeof p.distribuzione], 0
+        ) / profiliInteressati.length;
+        fattoreProfilo = 1 + (mediaInteresse - 20) / 100;
+      }
+    }
+
+    // ===== CALCOLO FINALE =====
+    let prezzoAlgoritmo = prezzoBase
+      * inflazione
+      * fattoreDomanda
+      * fattoreConcorrenza
+      * fattoreBudget
+      * fattoreFase
+      * fattoreTitolarita
+      * fattoreInfortunio
+      * fattoreProfilo;
+
+    // Limiti
+    const limiteMassimo = config.budget * 0.30;
+    const limiteMinimo = 1;
+    prezzoAlgoritmo = Math.min(prezzoAlgoritmo, limiteMassimo);
+    prezzoAlgoritmo = Math.max(limiteMinimo, Math.round(prezzoAlgoritmo));
+
+    // ===== COMBINA CON DATI STORICI =====
+    const nomeNormalizzato = normalizzaNome(player.nome);
+    const prezzoStorico = PREZZI_STORICI[nomeNormalizzato];
+    let prezzoFinale: number;
+
+    if (prezzoStorico !== undefined) {
+      // Più acquisti abbiamo, più ci fidiamo dell'algoritmo (che si adatta al mercato reale)
+      // All'inizio: 70% storico, 30% algoritmo
+      // Dopo 20+ acquisti: 40% storico, 60% algoritmo
+      const pesoStorico = Math.max(0.40, 0.70 - (acquisti.length * 0.015));
+      const pesoAlgoritmo = 1 - pesoStorico;
+      prezzoFinale = Math.round(pesoStorico * prezzoStorico + pesoAlgoritmo * prezzoAlgoritmo);
+    } else {
+      prezzoFinale = prezzoAlgoritmo;
+    }
+
+    return Math.max(limiteMinimo, Math.min(prezzoFinale, limiteMassimo));
+  };
     const ruolo = player.ruolo || "";
     const fabbisognoRuolo = config.rosa[ruolo as keyof typeof config.rosa] || 5;
     const giocatoriRuoloAcquistati = squadre.reduce((sum, s) => sum + s.giocatori.filter((g) => g.ruolo === ruolo).length, 0);
