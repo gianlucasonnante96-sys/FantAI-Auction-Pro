@@ -106,41 +106,42 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
-  // Inizializza squadre quando si entra in asta
-  useEffect(() => {
-    if (view === "asta") {
-      const squadreSalvate = localStorage.getItem("fantai-squadre");
-      if (squadreSalvate) {
-        const parsed = JSON.parse(squadreSalvate);
-        setSquadre(parsed);
-        if (parsed.length > 0) setSquadraAcquirente(parsed[0].nome);
-      } else {
-        const iniziali: Squadra[] = legaScandicci
-          ? PROFILI_SCANDICCI.map((p) => ({
-              nome: p.nome,
-              budget: config.budget,
-              giocatori: [],
-            }))
-          : Array.from({ length: config.partecipanti }, (_, i) => ({
-              nome: `Squadra ${i + 1}`,
-              budget: config.budget,
-              giocatori: [],
-            }));
-        setSquadre(iniziali);
-        setSquadraAcquirente(iniziali[0]?.nome || "");
-      }
-
-      const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
-      if (giocatoriSalvati) {
-        setGiocatori(JSON.parse(giocatoriSalvati));
-      }
-
-      const acquistiSalvati = localStorage.getItem("fantai-acquisti");
-      if (acquistiSalvati) {
-        setAcquisti(JSON.parse(acquistiSalvati));
-      }
+ // Inizializza squadre quando si entra in asta
+useEffect(() => {
+  if (view === "asta") {
+    const squadreSalvate = localStorage.getItem("fantai-squadre");
+    if (squadreSalvate) {
+      const parsed = JSON.parse(squadreSalvate);
+      setSquadre(parsed);
+      if (parsed.length > 0) setSquadraAcquirente(parsed[0].nome);
+    } else {
+      const iniziali: Squadra[] = legaScandicci
+        ? PROFILI_SCANDICCI.map((p) => ({
+            nome: p.nome,
+            budget: config.budget,
+            giocatori: [],
+          }))
+        : Array.from({ length: config.partecipanti }, (_, i) => ({
+            nome: `Squadra ${i + 1}`,
+            budget: config.budget,
+            giocatori: [],
+          }));
+      setSquadre(iniziali);
+      setSquadraAcquirente(iniziali[0]?.nome || "");
     }
-  }, [view, config, legaScandicci]);
+
+    const giocatoriSalvati = localStorage.getItem("fantai-giocatori");
+    if (giocatoriSalvati) {
+      setGiocatori(JSON.parse(giocatoriSalvati));
+    }
+
+    const acquistiSalvati = localStorage.getItem("fantai-acquisti");
+    if (acquistiSalvati) {
+      setAcquisti(JSON.parse(acquistiSalvati));
+    }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [view]);
 
   const vaiAvanti = () => setPasso((p) => Math.min(p + 1, 7));
   const vaiIndietro = () => setPasso((p) => Math.max(p - 1, 1));
