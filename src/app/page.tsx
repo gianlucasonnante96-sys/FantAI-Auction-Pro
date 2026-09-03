@@ -43,6 +43,7 @@ interface Acquisto {
   squadra: string;
   prezzo: number;
   timestamp: string;
+  prezzoConsigliato?: number;
 }
 
 interface ProfiloStorico {
@@ -110,6 +111,11 @@ export default function Home() {
   const [miaSquadra, setMiaSquadra] = useState<string>("");
   const [soloPreferiti, setSoloPreferiti] = useState<boolean>(false);
   const [messaggioExport, setMessaggioExport] = useState<string>("");
+  
+  // ========== NUOVO: Stato per modifica acquisti ==========
+  const [acquistoDaModificare, setAcquistoDaModificare] = useState<number | null>(null);
+  const [nuovoPrezzo, setNuovoPrezzo] = useState("");
+  const [nuovaSquadra, setNuovaSquadra] = useState("");
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
@@ -238,14 +244,12 @@ export default function Home() {
     return [...lista].sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
   }, [giocatoriDisponibili, filtroRuolo, ricerca, soloPreferiti, preferiti]);
 
-  // ========== NUOVO: Lista preferiti con dati completi ==========
   const preferitiConDati = useMemo(() => {
     return giocatori
       .filter((g) => preferiti.includes(g.nome))
       .sort((a, b) => (b.fvm || 0) - (a.fvm || 0));
   }, [giocatori, preferiti]);
 
-  // ========== NUOVO: Preferiti raggruppati per ruolo ==========
   const preferitiPerRuolo = useMemo(() => {
     const gruppi: Record<string, Player[]> = { P: [], D: [], C: [], A: [] };
     preferitiConDati.forEach((g) => {
@@ -259,7 +263,6 @@ export default function Home() {
     return gruppi;
   }, [preferitiConDati]);
 
-  // ========== NUOVO: Statistiche preferiti ==========
   const statistichePreferiti = useMemo(() => {
     const totale = preferitiConDati.length;
     const fvmMedio = totale > 0 
@@ -389,13 +392,156 @@ export default function Home() {
       giocatori: [...nuoveSquadre[squadraIndex].giocatori, { ...giocatoreSelezionato, prezzoPagato: prezzoNum }],
     };
     setSquadre(nuoveSquadre);
-    const nuoviAcquisti = [...acquisti, { giocatore: giocatoreSelezionato.nome, squadra: squadraAcquirente, prezzo: prezzoNum, timestamp: new Date().toISOString() }];
+    const prezzoCons = calcolaPrezzoConsigliato(giocatoreSelezionato);
+    const nuoviAcquisti = [...acquisti, { 
+      giocatore: giocatoreSelezionato.nome, 
+      squadra: squadraAcquirente, 
+      prezzo: prezzoNum, 
+      timestamp: new Date().toISOString(),
+      prezzoConsigliato: prezzoCons
+    }];
     setAcquisti(nuoviAcquisti);
     localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
     localStorage.setItem("fantai-acquisti", JSON.stringify(nuoviAcquisti));
     setGiocatoreSelezionato(null);
     setPrezzo("");
     setMessaggio(`Acquisto registrato: ${giocatoreSelezionato.nome} → ${squadraAcquirente} per ${prezzoNum} crediti.`);
+  };
+
+  // ========== NUOVO: Funzioni per gestire errori acquisti ==========
+  const annullaAcquisto = (indice: number) => {
+    if (!window.confirm("Sei sicuro di voler annullare questo acquisto? Il giocatore tornerà disponibile e il budget verrà ripristinato.")) return;
+    
+    const acquisto = acquisti[indice];
+    const squadraIndex = squadre.findIndex((s) => s.nome === acquisto.squadra);
+    
+    if (squadraIndex === -1) {
+      setMessaggio("Errore: squadra non trovata.");
+      return;
+    }
+
+    const giocatore = giocatori.find((g) => g.nome === acquisto.giocatore);
+    if (!giocatore) {
+      setMessaggio("Errore: giocatore non trovato.");
+      return;
+    }
+
+    // Rimuovi giocatore dalla squadra e ripristina budget
+    const nuoveSquadre = [...squadre];
+    nuoveSquadre[squadraIndex] = {
+      ...nuoveSquadre[squadraIndex],
+      budget: nuoveSquadre[squadraIndex].budget + acquisto.prezzo,
+      giocatori: nuoveSquadre[squadraIndex].giocatori.filter((g) => g.nome !== acquisto.giocatore),
+    };
+
+    // Rimuovi acquisto dalla lista
+    const nuoviAcquisti = acquisti.filter((_, i) => i !== indice);
+
+    setSquadre(nuoveSquadre);
+    setAcquisti(nuoviAcquisti);
+    localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
+    localStorage.setItem("fantai-acquisti", JSON.stringify(nuoviAcquisti));
+    setMessaggio(`✅ Acquisto annullato: ${acquisto.giocatore} è tornato disponibile.`);
+  };
+
+  const iniziaModificaAcquisto = (indice: number) => {
+    const acquisto = acquisti[indice];
+    setAcquistoDaModificare(indice);
+    setNuovoPrezzo(acquisto.prezzo.toString());
+    setNuovaSquadra(acquisto.squadra);
+  };
+
+  const confermaModificaAcquisto = () => {
+    if (acquistoDaModificare === null) return;
+    
+    const prezzoNum = Number(nuovoPrezzo);
+    if (isNaN(prezzoNum) || prezzoNum <= 0) {
+      setMessaggio("Prezzo non valido.");
+      return;
+    }
+
+    const acquistoOriginale = acquisti[acquistoDaModificare];
+    const squadraOriginaleIndex = squadre.findIndex((s) => s.nome === acquistoOriginale.squadra);
+    const squadraNuovaIndex = squadre.findIndex((s) => s.nome === nuovaSquadra);
+
+    if (squadraOriginaleIndex === -1 || squadraNuovaIndex === -1) {
+      setMessaggio("Errore: squadra non trovata.");
+      return;
+    }
+
+    const giocatore = giocatori.find((g) => g.nome === acquistoOriginale.giocatore);
+    if (!giocatore) {
+      setMessaggio("Errore: giocatore non trovato.");
+      return;
+    }
+
+    // Calcola differenza di prezzo
+    const differenzaPrezzo = prezzoNum - acquistoOriginale.prezzo;
+
+    // Se la squadra è cambiata
+    if (squadraOriginaleIndex !== squadraNuovaIndex) {
+      // Rimuovi giocatore dalla squadra originale
+      const nuoveSquadre = [...squadre];
+      nuoveSquadre[squadraOriginaleIndex] = {
+        ...nuoveSquadre[squadraOriginaleIndex],
+        budget: nuoveSquadre[squadraOriginaleIndex].budget + acquistoOriginale.prezzo,
+        giocatori: nuoveSquadre[squadraOriginaleIndex].giocatori.filter((g) => g.nome !== acquistoOriginale.giocatore),
+      };
+
+      // Controlla budget nuova squadra
+      if (nuoveSquadre[squadraNuovaIndex].budget < prezzoNum) {
+        setMessaggio(`Budget insufficiente per ${nuovaSquadra}.`);
+        return;
+      }
+
+      // Aggiungi giocatore alla nuova squadra
+      nuoveSquadre[squadraNuovaIndex] = {
+        ...nuoveSquadre[squadraNuovaIndex],
+        budget: nuoveSquadre[squadraNuovaIndex].budget - prezzoNum,
+        giocatori: [...nuoveSquadre[squadraNuovaIndex].giocatori, { ...giocatore, prezzoPagato: prezzoNum }],
+      };
+
+      setSquadre(nuoveSquadre);
+      localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
+    } else {
+      // Stessa squadra, cambia solo prezzo
+      const nuoveSquadre = [...squadre];
+      
+      // Controlla budget
+      const budgetDisponibile = nuoveSquadre[squadraNuovaIndex].budget + acquistoOriginale.prezzo;
+      if (budgetDisponibile < prezzoNum) {
+        setMessaggio(`Budget insufficiente per ${nuovaSquadra}.`);
+        return;
+      }
+
+      nuoveSquadre[squadraNuovaIndex] = {
+        ...nuoveSquadre[squadraNuovaIndex],
+        budget: budgetDisponibile - prezzoNum,
+        giocatori: nuoveSquadre[squadraNuovaIndex].giocatori.map((g) => 
+          g.nome === acquistoOriginale.giocatore ? { ...g, prezzoPagato: prezzoNum } : g
+        ),
+      };
+
+      setSquadre(nuoveSquadre);
+      localStorage.setItem("fantai-squadre", JSON.stringify(nuoveSquadre));
+    }
+
+    // Aggiorna acquisto
+    const nuoviAcquisti = [...acquisti];
+    nuoviAcquisti[acquistoDaModificare] = {
+      ...acquistoOriginale,
+      squadra: nuovaSquadra,
+      prezzo: prezzoNum,
+      prezzoConsigliato: calcolaPrezzoConsigliato(giocatore),
+    };
+
+    setAcquisti(nuoviAcquisti);
+    localStorage.setItem("fantai-acquisti", JSON.stringify(nuoviAcquisti));
+
+    setMessaggio(`✅ Acquisto modificato: ${acquistoOriginale.giocatore} → ${nuovaSquadra} per ${prezzoNum} crediti.`);
+    setAcquistoDaModificare(null);
+    setNuovoPrezzo("");
+    setNuovaSquadra("");
   };
 
   const resetAsta = () => {
@@ -542,6 +688,98 @@ export default function Home() {
     );
   };
 
+  // ========== NUOVO: Componente Grafico Andamento Prezzi ==========
+  const GraficoAndamentoPrezzi = () => {
+    const ultimi20 = acquisti.slice(-20);
+    if (ultimi20.length === 0) {
+      return (
+        <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+          <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+            📈 Andamento Prezzi
+          </h3>
+          <p className="text-xs text-gray-500 text-center py-4">Nessun acquisto registrato</p>
+        </div>
+      );
+    }
+
+    const maxPrezzo = Math.max(...ultimi20.map((a) => Math.max(a.prezzo, a.prezzoConsigliato || 0)));
+    
+    // Statistiche
+    const mediaPagata = Math.round(ultimi20.reduce((s, a) => s + a.prezzo, 0) / ultimi20.length);
+    const mediaConsigliata = Math.round(ultimi20.reduce((s, a) => s + (a.prezzoConsigliato || 0), 0) / ultimi20.length);
+    const affari = ultimi20.filter((a) => a.prezzo < (a.prezzoConsigliato || 0)).length;
+
+    return (
+      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          📈 Andamento Prezzi (ultimi {ultimi20.length})
+        </h3>
+        
+        {/* Statistiche rapide */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+            <p className="text-[10px] text-gray-400">Media pagata</p>
+            <p className="text-sm font-bold text-orange-400">{mediaPagata}cr</p>
+          </div>
+          <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+            <p className="text-[10px] text-gray-400">Media consigliata</p>
+            <p className="text-sm font-bold text-green-400">{mediaConsigliata}cr</p>
+          </div>
+          <div className="rounded-lg bg-gray-800/50 p-2 text-center">
+            <p className="text-[10px] text-gray-400">Affari</p>
+            <p className="text-sm font-bold text-blue-400">{affari}/{ultimi20.length}</p>
+          </div>
+        </div>
+
+        {/* Grafico a barre */}
+        <div className="relative h-32 bg-gray-800/30 rounded-lg p-2 overflow-x-auto">
+          <div className="flex items-end gap-1 h-full min-w-max">
+            {ultimi20.map((a, i) => {
+              const altezzaPagata = (a.prezzo / maxPrezzo) * 100;
+              const altezzaCons = ((a.prezzoConsigliato || 0) / maxPrezzo) * 100;
+              const isAffare = a.prezzo < (a.prezzoConsigliato || 0);
+              const colore = isAffare ? "bg-green-500" : "bg-red-500";
+              
+              return (
+                <div key={i} className="flex flex-col items-center gap-1 flex-1 min-w-[20px]">
+                  <div className="relative w-full h-full flex items-end justify-center">
+                    {/* Linea prezzo consigliato */}
+                    <div 
+                      className="absolute w-full border-t-2 border-dashed border-yellow-500/50"
+                      style={{ bottom: `${altezzaCons}%` }}
+                    />
+                    {/* Barra prezzo pagato */}
+                    <div 
+                      className={`w-full ${colore} rounded-t transition-all hover:opacity-80`}
+                      style={{ height: `${altezzaPagata}%` }}
+                      title={`${a.giocatore}: ${a.prezzo}cr (cons: ${a.prezzoConsigliato}cr)`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Legenda */}
+        <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-gray-400">
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 bg-green-500 rounded" />
+            <span>Affare</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 bg-red-500 rounded" />
+            <span>Sovraprezzo</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-0.5 bg-yellow-500 border-dashed" />
+            <span>Consigliato</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const StoricoPrezzi = () => {
     const ruoliOrd: ("P" | "D" | "C" | "A")[] = ["P", "D", "C", "A"];
     const icone: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
@@ -550,7 +788,7 @@ export default function Home() {
     return (
       <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
         <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-          📈 Storico Prezzi (ultimi 5 per ruolo)
+          📊 Storico per Ruolo (ultimi 5)
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {ruoliOrd.map((r) => {
@@ -591,6 +829,7 @@ export default function Home() {
           </button>
 
           <PannelloMiaSquadra />
+          <GraficoAndamentoPrezzi />
           <StoricoPrezzi />
 
           {legaScandicci && (
@@ -747,16 +986,85 @@ export default function Home() {
             </div>
           )}
 
+          {/* ========== NUOVO: Cronologia acquisti con gestione errori ========== */}
           {acquisti.length > 0 && (
             <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
-              <h3 className="text-sm font-bold text-white mb-2">Ultimi acquisti</h3>
-              <ul className="space-y-1 text-xs text-gray-300 max-h-40 overflow-y-auto">
-                {acquisti.slice(-10).reverse().map((a, i) => (
-                  <li key={i} className="flex justify-between">
-                    <span>{a.giocatore}</span>
-                    <span>{a.squadra} - {a.prezzo}cr</span>
-                  </li>
-                ))}
+              <h3 className="text-sm font-bold text-white mb-3">Cronologia Acquisti ({acquisti.length})</h3>
+              <ul className="space-y-2 text-xs text-gray-300 max-h-96 overflow-y-auto">
+                {acquisti.slice().reverse().map((a, i) => {
+                  const indiceReale = acquisti.length - 1 - i;
+                  const isAffare = a.prezzoConsigliato && a.prezzo < a.prezzoConsigliato;
+                  const isModifica = acquistoDaModificare === indiceReale;
+                  
+                  return (
+                    <li key={i} className="rounded-lg bg-gray-800/50 p-2">
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-white">{a.giocatore}</span>
+                            {isAffare && <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">AFFARE</span>}
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            {a.squadra} • {a.prezzo}cr
+                            {a.prezzoConsigliato && <span className="text-gray-500"> (cons: {a.prezzoConsigliato}cr)</span>}
+                          </div>
+                        </div>
+                        {!isModifica && (
+                          <button
+                            onClick={() => iniziaModificaAcquisto(indiceReale)}
+                            className="ml-2 p-1 rounded bg-gray-700 hover:bg-blue-700 transition-colors"
+                            title="Modifica acquisto"
+                          >
+                            <span className="text-xs">⚙️</span>
+                          </button>
+                        )}
+                      </div>
+                      
+                      {isModifica && (
+                        <div className="mt-2 space-y-2 border-t border-gray-700 pt-2">
+                          <input
+                            type="number"
+                            value={nuovoPrezzo}
+                            onChange={(e) => setNuovoPrezzo(e.target.value)}
+                            placeholder="Nuovo prezzo"
+                            className="w-full rounded border border-gray-600 bg-gray-800 p-1.5 text-white text-xs"
+                          />
+                          <select
+                            value={nuovaSquadra}
+                            onChange={(e) => setNuovaSquadra(e.target.value)}
+                            className="w-full rounded border border-gray-600 bg-gray-800 p-1.5 text-white text-xs"
+                          >
+                            {squadre.map((s) => (
+                              <option key={s.nome} value={s.nome} className="text-gray-900 bg-white">
+                                {s.nome}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={confermaModificaAcquisto}
+                              className="flex-1 rounded bg-green-600 hover:bg-green-500 px-2 py-1 text-xs font-semibold text-white"
+                            >
+                              ✓ Conferma
+                            </button>
+                            <button
+                              onClick={() => setAcquistoDaModificare(null)}
+                              className="flex-1 rounded bg-gray-700 hover:bg-gray-600 px-2 py-1 text-xs font-semibold text-white"
+                            >
+                              ✕ Annulla
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => annullaAcquisto(indiceReale)}
+                            className="w-full rounded bg-red-700 hover:bg-red-600 px-2 py-1 text-xs font-semibold text-white"
+                          >
+                            🗑️ Elimina acquisto
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -883,9 +1191,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // ========== DASHBOARD POTENZIATA ==========
-  // ==========================================
   if (view === "dashboard") {
     const iconeRuolo: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
     const nomiRuolo: Record<string, string> = { P: "Portieri", D: "Difensori", C: "Centrocampisti", A: "Attaccanti" };
@@ -895,7 +1200,6 @@ export default function Home() {
       <main className="min-h-screen bg-black text-white px-5 py-8">
         <div className="mx-auto w-full max-w-md">
           
-          {/* ========== HEADER ========== */}
           <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-gray-900 to-gray-950 p-6 mb-4">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -905,7 +1209,6 @@ export default function Home() {
               <div className="text-4xl">📊</div>
             </div>
             
-            {/* Statistiche rapide */}
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-gray-800/60 p-3">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wider">Partecipanti</p>
@@ -931,7 +1234,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ========== I MIEI PREFERITI ========== */}
           <div className="rounded-2xl border border-yellow-700/50 bg-gradient-to-br from-yellow-950/20 to-gray-900 p-5 mb-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2">
@@ -952,7 +1254,6 @@ export default function Home() {
               </div>
             ) : (
               <>
-                {/* Mini statistiche preferiti */}
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   <div className="rounded-lg bg-gray-800/50 p-2 text-center">
                     <p className="text-[10px] text-gray-400">Disponibili</p>
@@ -968,7 +1269,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Lista per ruolo */}
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                   {ruoliOrd.map((r) => {
                     const lista = preferitiPerRuolo[r] || [];
@@ -1026,7 +1326,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* ========== PULSANTI AZIONE RAPIDI ========== */}
           <div className="grid grid-cols-2 gap-3 mb-4">
             <button 
               onClick={() => setView("asta")} 
@@ -1044,7 +1343,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* ========== RESET ========== */}
           <button
             onClick={() => {
               if (!window.confirm("Vuoi davvero reimpostare tutto? Perderai tutti i dati.")) return;
