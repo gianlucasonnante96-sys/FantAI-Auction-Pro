@@ -6,7 +6,6 @@ import { PREZZI_STORICI } from "@/data/prezziStorici";
 import { getTitolarita, getInfortunio } from "@/lib/giocatoriInfo";
 import { normalizzaNome } from "@/lib/normalizza";
 
-// -------- TIPI ----------
 interface LegaConfig {
   partecipanti: number;
   budget: number;
@@ -54,7 +53,6 @@ interface ProfiloStorico {
   lowCost: number;
 }
 
-// -------- PROFILI SCANDICCI ----------
 const PROFILI_SCANDICCI: ProfiloStorico[] = [
   { nome: "Jonny", distribuzione: { P: 10, D: 11, C: 5, A: 71 }, stile: "Cacciatore di top", topPagati: 4, lowCost: 10 },
   { nome: "Sina", distribuzione: { P: 9, D: 3, C: 15, A: 72 }, stile: "Attacco pesante", topPagati: 3, lowCost: 8 },
@@ -68,7 +66,6 @@ const PROFILI_SCANDICCI: ProfiloStorico[] = [
   { nome: "Toniesi", distribuzione: { P: 6, D: 8, C: 21, A: 63 }, stile: "Tradizionalista", topPagati: 3, lowCost: 7 },
 ];
 
-// -------- CONFIGURAZIONE INIZIALE ----------
 const configIniziale: LegaConfig = {
   partecipanti: 8,
   budget: 500,
@@ -95,7 +92,6 @@ export default function Home() {
 
   const ruoliCompletatiRef = useRef<Set<string>>(new Set());
 
-  // Carica i dati salvati all'avvio (una sola volta)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cfg = localStorage.getItem("fantai-legaconfig");
@@ -130,7 +126,6 @@ export default function Home() {
     localStorage.setItem("fantai-legaconfig", JSON.stringify(config));
     localStorage.setItem("fantai-lega-scandicci", JSON.stringify(legaScandicci));
     
-    // Inizializza le squadre solo se non esistono già
     if (!localStorage.getItem("fantai-squadre")) {
       const squadreIniziali: Squadra[] = legaScandicci
         ? PROFILI_SCANDICCI.map((p) => ({ nome: p.nome, budget: config.budget, giocatori: [] }))
@@ -318,7 +313,6 @@ export default function Home() {
     return analisi;
   };
 
-  // -------- RENDER: VISTA CALCATORI RIMASTI ----------
   if (view === "rimasti") {
     const ruoliOrdinati = ["P", "D", "C", "A"];
     const gruppi = giocatoriDisponibili.reduce((acc, g) => {
@@ -409,7 +403,6 @@ export default function Home() {
     );
   }
 
-  // -------- RENDER: DASHBOARD ----------
   if (view === "dashboard") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -465,7 +458,6 @@ export default function Home() {
     );
   }
 
-  // -------- RENDER: IMPORT ----------
   if (view === "import") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -479,7 +471,6 @@ export default function Home() {
     );
   }
 
-  // -------- RENDER: WIZARD ----------
   return (
     <main className="min-h-screen bg-black text-white px-5 py-8">
       <div className="mx-auto w-full max-w-md">
