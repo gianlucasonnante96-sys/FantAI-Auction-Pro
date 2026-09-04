@@ -217,7 +217,7 @@ export default function Home() {
         righe.push(`${g.ruolo || ""},${g.nome},${g.squadra || ""},${g.prezzoPagato || 0}`);
       });
       const csv = righe.join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -226,6 +226,94 @@ export default function Home() {
       URL.revokeObjectURL(url);
       setMessaggioExport("✅ CSV scaricato!");
       setTimeout(() => setMessaggioExport(""), 2500);
+    }
+  };
+
+  // ========== NUOVO: Esporta Cronologia Acquisti ==========
+  const esportaTuttiGliAcquisti = (formato: "testo" | "csv") => {
+    if (acquisti.length === 0) {
+      setMessaggio("⚠️ Nessun acquisto registrato.");
+      setTimeout(() => setMessaggio(""), 3000);
+      return;
+    }
+
+    if (formato === "testo") {
+      const righe = acquisti.map((a, i) => 
+        `${i + 1}. ${a.giocatore} → ${a.squadra} (${a.prezzo}cr) - ${new Date(a.timestamp).toLocaleTimeString('it-IT')}`
+      );
+      const testo = `📜 CRONOLOGIA ACQUISTI\n\n${righe.join("\n")}`;
+      navigator.clipboard.writeText(testo).then(() => {
+        setMessaggio("✅ Cronologia acquisti copiata negli appunti!");
+        setTimeout(() => setMessaggio(""), 2500);
+      });
+    } else {
+      const righe = ["Ordine,Giocatore,Squadra,Prezzo,Timestamp"];
+      acquisti.forEach((a, i) => {
+        righe.push(`${i + 1},${a.giocatore},${a.squadra},${a.prezzo},${new Date(a.timestamp).toLocaleString('it-IT')}`);
+      });
+      const csv = righe.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cronologia_acquisti.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessaggio("✅ CSV cronologia acquisti scaricato!");
+      setTimeout(() => setMessaggio(""), 2500);
+    }
+  };
+
+  // ========== NUOVO: Esporta Tutte le Rose ==========
+  const esportaTutteLeRose = (formato: "testo" | "csv") => {
+    if (squadre.length === 0) {
+      setMessaggio("⚠️ Nessuna squadra disponibile.");
+      setTimeout(() => setMessaggio(""), 3000);
+      return;
+    }
+
+    if (formato === "testo") {
+      let testo = "🏆 ROSE COMPLETE\n\n";
+      const ruoliOrd = ["P", "D", "C", "A"];
+      squadre.forEach(s => {
+        testo += `=== ${s.nome} (Budget residuo: ${s.budget}cr) ===\n`;
+        if (s.giocatori.length === 0) {
+          testo += "Nessun giocatore acquistato\n";
+        } else {
+          ruoliOrd.forEach(r => {
+            const giocatoriRuolo = s.giocatori.filter(g => g.ruolo === r);
+            if (giocatoriRuolo.length > 0) {
+              testo += `[${r}] ` + giocatoriRuolo.map(g => `${g.nome} (${g.prezzoPagato}cr)`).join(", ") + "\n";
+            }
+          });
+        }
+        testo += "\n";
+      });
+      navigator.clipboard.writeText(testo).then(() => {
+        setMessaggio("✅ Rose complete copiate negli appunti!");
+        setTimeout(() => setMessaggio(""), 2500);
+      });
+    } else {
+      const righe = ["Squadra,Ruolo,Giocatore,Prezzo"];
+      squadre.forEach(s => {
+        if (s.giocatori.length === 0) {
+          righe.push(`${s.nome},-,Nessuno,0`);
+        } else {
+          s.giocatori.forEach(g => {
+            righe.push(`${s.nome},${g.ruolo || "VAR"},${g.nome},${g.prezzoPagato || 0}`);
+          });
+        }
+      });
+      const csv = righe.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `rose_complete.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessaggio("✅ CSV rose complete scaricato!");
+      setTimeout(() => setMessaggio(""), 2500);
     }
   };
 
@@ -310,9 +398,6 @@ export default function Home() {
     }
   }, [giocatoriDisponibili, squadre, giocatori]);
 
-  // ==========================================
-  // ALGORITMO PREZZO CONSIGLIATO AVANZATO
-  // ==========================================
   const calcolaPrezzoConsigliato = (player: Player): number => {
     const fvmProp = calcolaFMVProporzionato(player.fvm);
     const base = fvmProp || player.quotazioneIniziale || 10;
@@ -763,9 +848,6 @@ export default function Home() {
     );
   };
 
-  // ==========================================
-  // RENDER: VISTA ASTA
-  // ==========================================
   if (view === "asta") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -916,6 +998,36 @@ export default function Home() {
               </ul>
             </div>
           )}
+
+          {/* ========== NUOVO: Pannello Esportazioni Globali ========== */}
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 mb-4">
+            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">📥 Esportazioni Globali</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Cronologia Acquisti</p>
+                <div className="flex gap-2">
+                  <button onClick={() => esportaTuttiGliAcquisti("testo")} className="flex-1 rounded-lg bg-gray-700 hover:bg-gray-600 px-2 py-2 text-xs font-semibold text-white transition-colors flex items-center justify-center gap-1">
+                    📋 Copia
+                  </button>
+                  <button onClick={() => esportaTuttiGliAcquisti("csv")} className="flex-1 rounded-lg bg-indigo-700 hover:bg-indigo-600 px-2 py-2 text-xs font-semibold text-white transition-colors flex items-center justify-center gap-1">
+                    📥 CSV
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Tutte le Rose</p>
+                <div className="flex gap-2">
+                  <button onClick={() => esportaTutteLeRose("testo")} className="flex-1 rounded-lg bg-gray-700 hover:bg-gray-600 px-2 py-2 text-xs font-semibold text-white transition-colors flex items-center justify-center gap-1">
+                    📋 Copia
+                  </button>
+                  <button onClick={() => esportaTutteLeRose("csv")} className="flex-1 rounded-lg bg-purple-700 hover:bg-purple-600 px-2 py-2 text-xs font-semibold text-white transition-colors flex items-center justify-center gap-1">
+                    📥 CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button onClick={() => setView("rimasti")} className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-3 text-sm font-bold text-white transition-colors">👥 Rimasti</button>
             <button onClick={resetAsta} className="flex-1 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 px-4 py-3 text-sm font-semibold text-white transition-colors">Azzera</button>
@@ -925,9 +1037,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // RENDER: VISTA RIMASTI
-  // ==========================================
   if (view === "rimasti") {
     const ruoliOrdinati = ["P", "D", "C", "A"];
     const gruppi = giocatoriDisponibili.reduce((acc, g) => {
@@ -1005,9 +1114,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // RENDER: DASHBOARD
-  // ==========================================
   if (view === "dashboard") {
     const iconeRuolo: Record<string, string> = { P: "🧤", D: "🛡️", C: "⚽", A: "🔥" };
     const nomiRuolo: Record<string, string> = { P: "Portieri", D: "Difensori", C: "Centrocampisti", A: "Attaccanti" };
@@ -1088,9 +1194,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // RENDER: IMPORT
-  // ==========================================
   if (view === "import") {
     return (
       <main className="min-h-screen bg-black text-white px-5 py-8">
@@ -1102,9 +1205,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // RENDER: WIZARD (Default)
-  // ==========================================
   return (
     <main className="min-h-screen bg-black text-white px-5 py-8">
       <div className="mx-auto w-full max-w-md">
