@@ -1,11 +1,11 @@
 export const INFORTUNI = [
   {
-    "giocatore": "N'Dicka",
-    "ruolo": "Difensore centrale",
-    "squadra": "Roma",
-    "infortunio": "Problema muscolare",
-    "dal": "31/08/2026",
-    "fino_ca": null,
+    "giocatore": "Giovane",
+    "ruolo": "Punta centrale",
+    "squadra": "Napoli",
+    "infortunio": "Ernia inguinale",
+    "dal": "03/09/2026",
+    "fino_ca": "08/10/2026",
     "valore_mercato": "35,00 mln €"
   },
   {
