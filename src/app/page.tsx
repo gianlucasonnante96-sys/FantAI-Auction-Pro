@@ -124,6 +124,35 @@ export default function Home() {
     return Math.max(1, Math.round(proporzionato));
   };
 
+    // ========== NUOVO: Indicatore Affare Assoluto ==========
+  const isAffareAssoluto = (player: Player): boolean => {
+    const fvmProp = calcolaFMVProporzionato(player.fvm);
+    if (fvmProp <= 0) return false;
+    const prezzoCons = calcolaPrezzoConsigliato(player);
+    // Affare se FMV è almeno il 30% superiore al prezzo consigliato
+    return fvmProp >= prezzoCons * 1.3;
+  };
+
+  // ========== NUOVO: Radar Bisogni Avversari ==========
+  const calcolaBisognoRuolo = (ruolo: string): { squadreInteressate: number; totaleSquadre: number; livello: "alta" | "media" | "bassa" } => {
+    const fabbisognoRuolo = config.rosa[ruolo as keyof typeof config.rosa] || 5;
+    const squadreCheDevonoCoprire = squadre.filter((s) => {
+      const giocatoriRuoloSquadra = s.giocatori.filter((g) => g.ruolo === ruolo).length;
+      return giocatoriRuoloSquadra < fabbisognoRuolo;
+    }).length;
+    
+    let livello: "alta" | "media" | "bassa";
+    if (squadreCheDevonoCoprire >= 6) livello = "alta";
+    else if (squadreCheDevonoCoprire >= 3) livello = "media";
+    else livello = "bassa";
+    
+    return {
+      squadreInteressate: squadreCheDevonoCoprire,
+      totaleSquadre: squadre.length,
+      livello
+    };
+  };
+  
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cfg = localStorage.getItem("fantai-legaconfig");
